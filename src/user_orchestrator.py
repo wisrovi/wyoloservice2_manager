@@ -13,21 +13,32 @@ from optuna.trial import Trial
 from celery.result import AsyncResult
 
 # Import the Celery app configuration
-from celery_config import app
+from .celery_config import app
 
 
 def wait_for_result(job: AsyncResult) -> Any:
-    """Blocks until the Celery task is ready and returns the result.
+    """Blocks until the Celery task is ready and returns the result safely.
+    Avoids using job.get() to bypass Celery's safety check for synchronous subtasks.
 
     Args:
         job (AsyncResult): The Celery task to wait for.
 
     Returns:
-        Any: The result of the Celery task.
+        Any: The result of the Celery task or None if it failed.
     """
-    while not job.ready():
-        time.sleep(2)
-    return job.result
+    try:
+        # Manually poll for completion to avoid "Never call result.get() within a task"
+        while not job.ready():
+            time.sleep(1)
+        
+        if job.successful():
+            return job.result
+        else:
+            print(f"Task {job.id} failed with state: {job.state}")
+            return None
+    except Exception as e:
+        print(f"Error waiting for task {job.id}: {str(e)}")
+        return None
 
 
 def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
@@ -125,9 +136,11 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
         )
 
         # Wait for completion and extract the metric
-        result: Optional[dict[str, Any]] = wait_for_result(job)
-        if result and "accuracy" in result:
+        result: Any = wait_for_result(job)
+        if isinstance(result, dict) and "accuracy" in result:
             return float(result["accuracy"])
+        
+        print(f"Warning: Trial {trial.number} did not return accuracy. Result: {result}")
         return 0.0
 
     return objective

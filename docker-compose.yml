@@ -1,0 +1,33 @@
+services:
+  manager_study:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: wisrovi/train_service_manager_orchestrator_v1.0.0
+    restart: unless-stopped
+    env_file:
+      - control_host.env
+    network_mode: "host"
+    volumes:
+      - ./src:/app/src
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gradio
+    image: wisrovi/train_service_manager_ui_v1.0.0
+    restart: unless-stopped
+    env_file:
+      - control_host.env
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./src:/app/src
+      - ./gradio:/app/gradio
+    depends_on:
+      - manager_study
