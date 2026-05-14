@@ -27,9 +27,12 @@ celery_settings: dict[str, Any] = {
     "result_expires": 86400,  # 24 hours
     "task_always_eager": False,
     "result_persistent": True,
+    "task_track_started": True,
 }
 
 app.conf.update(celery_settings)
 
 # Allow .get() inside tasks, required for Optuna trial orchestration
+# This is a critical setting for the Manager to wait for Invoker results
+import celery.result
 celery.result.allow_join_result()
