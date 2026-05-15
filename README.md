@@ -1,113 +1,82 @@
 # Wyolo Manager - Optuna Study Orchestrator
 
-This component is the **central orchestrator** of the cluster. It coordinates hyperparameter optimization studies using **Optuna**, suggesting values and dispatching trials to workers via Celery.
+This component is the **central orchestrator** of the AI cluster. It manages hyperparameter optimization studies using **Optuna**, ensuring that every training trial is dispatched correctly and results are persisted.
 
 ---
 
-## 🏗️ Project Structure
+## 📊 System Architecture
 
-```text
-.
-├── src/                    # Application source code
-│   ├── celery_config.py    # Celery app and routing config
-│   ├── user_orchestrator.py # Main orchestration logic
-│   └── config.yaml         # Default configuration
-├── gradio/                 # Gradio UI source code
-│   └── app.py              # UI implementation
-├── docker/                 # Docker configuration
-│   ├── Dockerfile          # Manager container definition
-│   └── Dockerfile.gradio   # UI container definition
-├── tests/                  # Unit and integration tests
-├── Makefile                # Management commands
-├── docker-compose.yml      # Orchestration for the manager
-├── control_host.env        # Environment variables (local only)
-└── requirements.txt        # Python dependencies
+```mermaid
+graph TD
+    User((User)) -->|Upload YAML| UI[Gradio UI]
+    UI -->|Tasks: manage_study| Broker[Redis Broker]
+    Broker -->|Queue: managers| Manager[Wyolo Manager]
+    
+    subgraph Orchestrator
+        Manager -->|1. Load/Create| DB[(PostgreSQL)]
+        Manager -->|2. Suggest Params| Optuna[Optuna Engine]
+        Manager -->|3. Repair & Merge| Robust[Robustness Layer]
+    end
+    
+    Robust -->|4. Task: train_on_gpu| Broker
+    Broker -->|Queue: gpus_high/low| Invoker[GPU Invoker]
+    
+    Invoker -->|5. Execute Training| Docker[Training Container]
+    Docker -->|6. Return Accuracy| Invoker
+    Invoker -->|7. Send Result| Manager
+    Manager -->|8. Update Study| DB
 ```
 
 ---
 
-## 🚀 Quick Start
+## ✨ Key Features
 
-### 1. Setup Environment
-Create and configure your local environment file:
-```bash
-make setup
-```
-Edit `control_host.env` and set the `REDIS_URL` to point to your Redis broker.
-
-### 2. Build and Run
-```bash
-# Build the images
-make build
-
-# Start the orchestrator and UI
-make up
-```
-
-The Gradio UI will be available at `http://localhost:7860`.
-
-### 3. Management
-*   **Logs**: `make logs`
-*   **Stop**: `make down`
-*   **Clean**: `make clean`
+- **🎯 Smart Orchestration**: Uses Optuna to find the best hyperparameters for your models.
+- **🛡️ Extreme Robustness**: Automatically repairs missing fields in your configuration using a fail-safe default layer.
+- **📈 Persistence**: All experiments, trials, and results are stored in PostgreSQL.
+- **🚀 Flexible Routing**: Supports priority queues (`high`, `medium`, `low`) to manage cluster load.
+- **🖥️ Monitoring**: Integrated logging that shows the exact payload sent to workers.
 
 ---
 
-## 🧪 Testing
+## 🧪 Testing and Validation
 
-### Manual Integration Test
-You can test the entire flow (Manager -> Optuna -> Invoker) without using the UI by running the manual test script.
+### Integration Test (Full Flow)
+To test the Manager, Optuna, and Invoker connection:
+1. Set the Redis IP: `export CONTROL_HOST=192.168.10.252`
+2. Run: `python tests/send_to_manager_directly.py`
 
-1.  **Set Environment Variables**: Ensure your shell has access to the Redis broker IP.
-    ```bash
-    export CONTROL_HOST=192.168.10.252  # Replace with your actual IP
-    ```
-2.  **Run the script**:
-    ```bash
-    python tests/send_to_manager_directly.py
-    ```
-
-This script will:
-*   Load `tests/test_to_send_manager.yaml`.
-*   Send the task to the `managers` queue.
-*   The Manager will then use Optuna to generate a trial and send it to the `gpus_high` queue (based on the `priority: high` setting in the YAML).
-
-### Invoker Direct Test
-To test only the worker (Invoker) bypassing the Manager:
-```bash
-python tests/send_to_invoker_directly.py
-```
+### Robustness Test (Broken Config)
+To verify how the Manager repairs an incomplete YAML:
+1. Run: `python tests/send_broken_to_manager.py`
+2. Check logs: `docker logs wyolo_manager -f`
 
 ---
 
-## 🛠️ Architecture
+## 🛠️ Setup & Commands
 
-### Main Flow
-1.  **User** uploads a YAML configuration via the **Gradio UI**.
-2.  **UI** sends a `manage_study` task to the `managers` queue.
-3.  **Manager** creates or loads an Optuna study.
-4.  **Optuna** suggests hyperparameters for a trial.
-5.  **Manager** dispatches a `train_on_gpu` task to the configured worker queue.
-6.  **GPU Worker** executes the training and returns the metric (accuracy).
-7.  **Manager** updates the study and repeats until `n_trials` is reached.
-8.  **Manager** returns the best parameters found.
+| Command | Description |
+| :--- | :--- |
+| `make setup` | Initialize environment variables. |
+| `make build` | Build Manager and UI Docker images. |
+| `make up` | Start the orchestrator in the background. |
+| `make logs` | Follow `wyolo_manager` logs in real-time. |
+| `make down` | Stop all services. |
 
 ---
 
-## ⚙️ Configuration
+## ⚙️ Configuration Example
 
-The manager expects a configuration object in the `manage_study` task. Example:
+The manager can handle minimal configurations. It will automatically fill the rest:
 
 ```yaml
 sweeper:
-  study_name: "yolo_optimization"
-  direction: "maximize"
-  n_trials: 50
-  target_worker_queue: "gpus_high"
+  study_name: "auto_optimized_exp"
+  n_trials: 5
+  priority: "high"
   search_space:
     train:
       lr0: ["loguniform", 1e-5, 1e-2]
-      imgsz: ["range", 320, 640, 32]
 ```
 
 ---

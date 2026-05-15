@@ -1,0 +1,5 @@
+sweeper:
+  study_name: "broken_config_test_v1"
+  n_trials: 1
+  priority: "low"
+  # Note: Missing model, type, train, metadata, etc.
