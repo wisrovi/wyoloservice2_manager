@@ -1,0 +1,1 @@
+- [ ] Validar sistema de auto-sanación: Lanzar un estudio y simular un fallo en el invoker (o devolver accuracy negativo) para verificar que el manager realiza los 3 reintentos antes de desistir.
