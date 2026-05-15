@@ -53,6 +53,33 @@ The Gradio UI will be available at `http://localhost:7860`.
 
 ---
 
+## 🧪 Testing
+
+### Manual Integration Test
+You can test the entire flow (Manager -> Optuna -> Invoker) without using the UI by running the manual test script.
+
+1.  **Set Environment Variables**: Ensure your shell has access to the Redis broker IP.
+    ```bash
+    export CONTROL_HOST=192.168.10.252  # Replace with your actual IP
+    ```
+2.  **Run the script**:
+    ```bash
+    python tests/send_to_manager_directly.py
+    ```
+
+This script will:
+*   Load `tests/test_to_send_manager.yaml`.
+*   Send the task to the `managers` queue.
+*   The Manager will then use Optuna to generate a trial and send it to the `gpus_high` queue (based on the `priority: high` setting in the YAML).
+
+### Invoker Direct Test
+To test only the worker (Invoker) bypassing the Manager:
+```bash
+python tests/send_to_invoker_directly.py
+```
+
+---
+
 ## 🛠️ Architecture
 
 ### Main Flow

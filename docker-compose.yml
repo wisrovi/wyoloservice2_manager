@@ -1,5 +1,6 @@
 services:
   manager_study:
+    container_name: wyolo_manager
     build:
       context: .
       dockerfile: docker/Dockerfile
@@ -29,5 +30,20 @@ services:
     volumes:
       - ./src:/app/src
       - ./gradio:/app/gradio
+    depends_on:
+      - manager_study
+
+  tester:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.test
+    image: wisrovi/train_service_manager_tester:v1.0.0
+    container_name: wyolo_tester
+    profiles: ["debug"]
+    env_file:
+      - control_host.env
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
     depends_on:
       - manager_study
