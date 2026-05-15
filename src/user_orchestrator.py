@@ -72,161 +72,123 @@ def wait_for_result(job: AsyncResult) -> Any:
         return None
 
 
+# --- Global Defaults ---
+BASE_DEFAULT_CONFIG = {
+    "model": "yolov8n.pt",
+    "type": "yolo",
+    "train": {
+        "batch": -1,
+        "data": "/datasets/clasification/colorball.v8i.multiclass/",
+        "epochs": 2,
+        "imgsz": 640,
+    },
+    "sweeper": {
+        "study_name": "exp_deteccion_headless",
+        "fitness": "metrics/mAP50-95(B)",
+    },
+    "metadata": {
+        "author": "William Rodríguez - wisrovi",
+        "content": "Experimento lanzado desde orquestador (fallback)",
+    },
+}
+
+def deep_update(base: dict, update: dict):
+    """Recursively updates a dictionary."""
+    for k, v in update.items():
+        if isinstance(v, dict) and k in base and isinstance(base[k], dict):
+            deep_update(base[k], v)
+        else:
+            base[k] = v
+
 def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
     """Creates a closure for the Optuna objective function.
-
+    
     Args:
         full_config (dict[str, Any]): The full YAML configuration for the study.
-
-    Returns:
-        Callable[[Trial], float]: The objective function for Optuna optimize.
     """
-    sweeper_cfg: dict[str, Any] = full_config.get("sweeper", {})
-
-    # 1. Determine priority (low, medium, high)
-    priority = sweeper_cfg.get("priority", "low")
-
-    # 2. Check for debug mode (defines a private or specific queue)
-    debug_val = sweeper_cfg.get("debug", False)
+    
+    # Pre-calculate worker queue based on input config (independent of Optuna trials)
+    sweeper_in = full_config.get("sweeper", {})
+    priority = sweeper_in.get("priority", "low")
+    debug_val = sweeper_in.get("debug", False)
 
     if debug_val:
-        # If debug is a string, use it as the queue name, else use 'gpus_debug'
         worker_queue = debug_val if isinstance(debug_val, str) else "gpus_debug"
     else:
-        # Construct queue name based on priority: gpus_low, gpus_medium, gpus_high
         worker_queue = f"gpus_{priority}"
 
-    search_space: dict[str, Any] = sweeper_cfg.get("search_space", {})
+    search_space: dict[str, Any] = sweeper_in.get("search_space", {})
 
     def objective(trial: Trial) -> float:
-        """The actual objective function called by Optuna.
-
-        Args:
-            trial (Trial): The Optuna trial object.
-
-        Returns:
-            float: The accuracy (or metric) achieved in the trial.
-        """
-
-        def parse_space(space: dict[str, Any], prefix: str = "") -> dict[str, Any]:
-            """Recursively parses the search space into Optuna suggestions.
-
-            Args:
-                space (dict[str, Any]): The search space definition.
-                prefix (str, optional): Prefix for nested keys. Defaults to "".
-
-            Returns:
-                dict[str, Any]: The suggested hyperparameters for this trial.
-            """
-            params: dict[str, Any] = {}
-            for key, value in space.items():
-                if isinstance(value, dict):
-                    params[key] = parse_space(value, f"{prefix}{key}_")
-                elif isinstance(value, list) and len(value) >= 2:
-                    dist_type: str = value[0]
-                    args: list[Any] = value[1:]
-                    # Ensure numeric arguments are properly typed
-                    processed_args: list[Any] = []
-                    for arg in args:
-                        if isinstance(arg, str):
-                            try:
-                                processed_args.append(float(arg))
-                            except ValueError:
-                                processed_args.append(arg)
-                        else:
-                            processed_args.append(arg)
-
-                    if dist_type == "choice":
-                        params[key] = trial.suggest_categorical(f"{prefix}{key}", args)
-                    elif dist_type == "uniform":
-                        params[key] = trial.suggest_float(
-                            f"{prefix}{key}", processed_args[0], processed_args[1]
-                        )
-                    elif dist_type == "loguniform":
-                        params[key] = trial.suggest_float(
-                            f"{prefix}{key}",
-                            processed_args[0],
-                            processed_args[1],
-                            log=True,
-                        )
-                    elif dist_type == "range":
-                        step: int = (
-                            int(processed_args[2]) if len(processed_args) > 2 else 1
-                        )
-                        params[key] = trial.suggest_int(
-                            f"{prefix}{key}",
-                            int(processed_args[0]),
-                            int(processed_args[1]),
-                            step=step,
-                        )
-                    else:
-                        params[key] = args[0]
-                else:
-                    params[key] = value
-            return params
-
-        # Generate overrides from the search space
-        overrides: dict[str, Any] = parse_space(search_space)
-        print(f"Trial {trial.number}: Suggested overrides: {overrides}")
-
-        def deep_update(base: dict, update: dict):
-            for k, v in update.items():
-                if isinstance(v, dict) and k in base and isinstance(base[k], dict):
-                    deep_update(base[k], v)
-                else:
-                    base[k] = v
-
-        # Create a clean copy for this trial
         import copy
         import yaml as yaml_log
 
-        trial_config = copy.deepcopy(full_config)
+        # 1. Start with the HARDCODED defaults as ultimate safety net
+        trial_config = copy.deepcopy(BASE_DEFAULT_CONFIG)
+        
+        # 2. Merge with the USER'S full configuration (overwrites defaults)
+        deep_update(trial_config, full_config)
+
+        # 3. Generate and apply Optuna suggestions
+        overrides: dict[str, Any] = parse_space(search_space)
+        print(f"Trial {trial.number}: Suggested overrides from Optuna: {overrides}")
         deep_update(trial_config, overrides)
 
-        # 1. Add user_id (root field)
-        metadata = trial_config.get("metadata", {})
+        # 4. Final Cleanup & Mandatory Fields (The "Contract" with Invoker)
+        # Ensure user_id exists
         if "user_id" not in trial_config:
-            trial_config["user_id"] = metadata.get("author", "Optuna Manager")
+            trial_config["user_id"] = trial_config.get("metadata", {}).get("author", "wisrovi")
 
-        # 2. Ensure 'type' is present (mandatory field)
-        if "type" not in trial_config:
-            trial_config["type"] = "yolo"
-
-        # 3. Simplify 'sweeper' section (only study_name and fitness)
-        if "sweeper" in trial_config:
-            original_sweeper = trial_config["sweeper"]
-            trial_config["sweeper"] = {
-                "study_name": original_sweeper.get("study_name", "optuna_study"),
-                "fitness": original_sweeper.get("fitness", "metrics/accuracy_top1"),
-            }
+        # Simplify sweeper for the Invoker (Invoker only needs these 2)
+        trial_config["sweeper"] = {
+            "study_name": sweeper_in.get("study_name", "optuna_study"),
+            "fitness": sweeper_in.get("fitness", "metrics/accuracy_top1"),
+        }
 
         # Log the exact payload for debugging
-        print(f"\n--- [TRIAL {trial.number} PAYLOAD START] ---")
+        print(f"\n--- [TRIAL {trial.number} PAYLOAD TO INVOKER] ---")
         print(yaml_log.dump(trial_config, default_flow_style=False))
+        print(f"--- [TRIAL {trial.number} TARGET QUEUE: {worker_queue}] ---")
         print(f"--- [TRIAL {trial.number} PAYLOAD END] ---\n")
 
-        # Validate that the queue exists and has active workers before sending
+        # Validate queue before sending
         if not check_queue_active(app, worker_queue):
-            print(
-                f"WARNING: No active workers detected for queue '{worker_queue}'. Sending anyway, but task might stay pending."
+            print(f"WARNING: No active workers for '{worker_queue}'. Task might hang.")
+
+        # Dispatch the trial task to the worker with retries
+        MAX_RETRIES = 3
+        RETRY_DELAY = 5
+        attempt = 0
+        result = None
+
+        while attempt < MAX_RETRIES:
+            attempt += 1
+            print(f"Trial {trial.number}: Dispatching task to queue '{worker_queue}' (Attempt {attempt}/{MAX_RETRIES})")
+            
+            # Dispatch the trial task to the worker
+            job: AsyncResult = app.send_task(
+                "tasks.train_on_gpu_simple", args=[trial_config], queue=worker_queue
             )
 
-        # Log target queue and task dispatch
-        print(f"Trial {trial.number}: Sending task to queue '{worker_queue}'")
+            # Wait for completion and extract the metric
+            result = wait_for_result(job)
+            
+            # Check if result is valid and accuracy is non-negative
+            if isinstance(result, dict) and "accuracy" in result:
+                acc = float(result["accuracy"])
+                if acc >= 0:
+                    return acc
+                else:
+                    print(f"Warning: Trial {trial.number} returned negative accuracy ({acc}). Possible training error.")
+            
+            print(f"[-] Trial {trial.number} attempt {attempt} failed or returned invalid result. Result: {result}")
+            
+            if attempt < MAX_RETRIES:
+                print(f"[*] Waiting {RETRY_DELAY}s before retrying...")
+                time.sleep(RETRY_DELAY)
 
-        # Dispatch the trial task to the worker
-        job: AsyncResult = app.send_task(
-            "tasks.train_on_gpu_simple", args=[trial_config], queue=worker_queue
-        )
-
-        # Wait for completion and extract the metric
-        result: Any = wait_for_result(job)
-        if isinstance(result, dict) and "accuracy" in result:
-            return float(result["accuracy"])
-
-        print(
-            f"Warning: Trial {trial.number} did not return accuracy. Result: {result}"
-        )
+        print(f"[-] Critical: Trial {trial.number} failed after {MAX_RETRIES} attempts.")
+        # If we reach here, all retries failed. Mark as 0.0 or raise error to let Optuna handle it.
         return 0.0
 
     return objective
