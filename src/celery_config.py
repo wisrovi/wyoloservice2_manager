@@ -1,3 +1,6 @@
+
+
+
 """Celery configuration module for the Manager component.
 
 This module initializes the Celery application with settings optimized for
@@ -9,10 +12,15 @@ from typing import Any
 import celery.result
 from celery import Celery
 
-# Get Redis URL from environment or default to localhost
-REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# Get Redis URL from environment
+REDIS_URL = os.getenv("REDIS_URL")
 
-app: Celery = Celery("ml_cluster", broker=REDIS_URL, backend=REDIS_URL)
+if not REDIS_URL:
+    # Fallback to CONTROL_HOST or localhost if REDIS_URL is not set
+    REDIS_HOST = os.getenv("CONTROL_HOST", "localhost")
+    REDIS_URL = f"redis://{REDIS_HOST}:23437/0"
+
+app: Celery = Celery("gradio_launcher", broker=REDIS_URL, backend=REDIS_URL)
 
 # Configuration for task routing
 app.conf.task_routes = {
@@ -35,4 +43,5 @@ app.conf.update(celery_settings)
 # Allow .get() inside tasks, required for Optuna trial orchestration
 # This is a critical setting for the Manager to wait for Invoker results
 import celery.result
+
 celery.result.allow_join_result()

@@ -4,19 +4,20 @@
 ENV_FILE := control_host.env
 DOCKER_COMPOSE := docker compose
 
-.PHONY: help setup build up down logs clean shell test
+.PHONY: help setup build start stop up down logs clean shell test run-test
 
 help:
 	@echo "🚀 Wyolo Manager Orchestrator - Management CLI"
 	@echo ""
 	@echo "Usage:"
 	@echo "  make setup        - Create the environment file ($(ENV_FILE))"
-	@echo "  make build        - Build the Docker image"
-	@echo "  make up           - Start the manager container in background"
-	@echo "  make down         - Stop and remove the container"
+	@echo "  make build        - Build the Docker images"
+	@echo "  make up           - Start the containers in background"
+	@echo "  make down         - Stop and remove the containers"
 	@echo "  make logs         - View real-time container logs"
-	@echo "  make shell        - Enter the running container shell"
+	@echo "  make shell        - Enter the running manager container shell"
 	@echo "  make test         - Run unit tests with pytest"
+	@echo "  make run-test     - Run the manual integration test container"
 	@echo "  make clean        - Remove python artifacts and temporary files"
 	@echo ""
 
@@ -36,9 +37,6 @@ build:
 start: $(ENV_FILE)
 	$(DOCKER_COMPOSE) up -d
 
-$(ENV_FILE):
-	@$(MAKE) setup
-
 stop:
 	$(DOCKER_COMPOSE) down
 
@@ -51,8 +49,11 @@ shell:
 test:
 	pytest tests/
 
+run-test:
+	$(DOCKER_COMPOSE) --profile debug run --rm tester
+
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	rm -rf .pytest_cache
-	rm -rf app/optuna_study.db
+	rm -rf src/optuna_study.db

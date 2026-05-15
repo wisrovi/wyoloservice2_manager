@@ -17,27 +17,34 @@ def launch_study(yaml_file):
         if not config:
             return "The YAML file is empty."
 
+        study_name = config.get('sweeper', {}).get('study_name', 'unknown')
+        priority = config.get('sweeper', {}).get('priority', 'low')
+
         # Send the task to the manager
-        # The task name must match the one defined in user_orchestrator.py
         result = app.send_task("tasks.manage_study", args=[config], queue="managers")
         
-        return f"Study launched successfully!\nTask ID: {result.id}\n\nYou can monitor the progress in the manager logs."
+        return (f"✅ Study launched successfully!\n\n"
+                f"ID: {result.id}\n"
+                f"Study Name: {study_name}\n"
+                f"Priority: {priority}\n\n"
+                f"The Manager is now orchestrating your trials with Optuna.\n"
+                f"Check logs with: docker logs wyolo_manager -f")
     
     except Exception as e:
-        return f"Error launching study: {str(e)}"
+        return f"❌ Error launching study: {str(e)}"
 
 # Create the Gradio interface
 with gr.Blocks(title="Wyolo Study Orchestrator") as demo:
     gr.Markdown("# 🚀 Wyolo Study Orchestrator")
-    gr.Markdown("Upload your search space and study configuration in YAML format to start the optimization process.")
+    gr.Markdown("Upload your search space to start the hyperparameter optimization (Optuna).")
     
     with gr.Row():
         with gr.Column():
-            file_input = gr.File(label="Upload Search Space (YAML)", file_types=[".yaml", ".yml"])
-            launch_btn = gr.Button("Launch Optimization Study", variant="primary")
+            file_input = gr.File(label="Upload Configuration (YAML)", file_types=[".yaml", ".yml"])
+            launch_btn = gr.Button("🚀 Launch Optimization Study", variant="primary")
         
         with gr.Column():
-            output_text = gr.Textbox(label="Status / Result", interactive=False, lines=10)
+            output_text = gr.Textbox(label="Status / Orchestration Details", interactive=False, lines=10)
     
     launch_btn.click(
         fn=launch_study,
@@ -45,18 +52,23 @@ with gr.Blocks(title="Wyolo Study Orchestrator") as demo:
         outputs=output_text
     )
     
-    gr.Markdown("### Example YAML structure:")
+    gr.Markdown("### 📝 Example YAML structure:")
     gr.Code(
-        value="""sweeper:
-  study_name: "my_optimization_study"
+        value="""model: "yolov8n-cls.pt"
+type: "yolo"
+train:
+  epochs: 5
+  imgsz: 640
+sweeper:
+  study_name: "color_ball_v3"
   direction: "maximize"
+  fitness: "metrics/accuracy_top1"
   n_trials: 10
-  target_worker_queue: "gpus"
+  priority: "high"  # Choices: high, medium, low
   search_space:
-    model: ["choice", "yolov8n", "yolo11s"]
     train:
       lr0: ["loguniform", 1e-5, 1e-2]
-      imgsz: ["range", 320, 640, 32]""",
+      imgsz: ["choice", 416, 640]""",
         language="yaml"
     )
 
