@@ -31,11 +31,16 @@ setup:
 		echo "⚠️  $(ENV_FILE) already exists."; \
 	fi
 
+
+create_network:
+	docker network create control_network
+
+
 build:
 	$(DOCKER_COMPOSE) build
 
 start: $(ENV_FILE)
-	$(DOCKER_COMPOSE) up -d
+	$(DOCKER_COMPOSE) up -d --build
 
 stop:
 	$(DOCKER_COMPOSE) down
