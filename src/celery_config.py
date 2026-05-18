@@ -20,12 +20,12 @@ if not REDIS_URL:
     REDIS_HOST = os.getenv("CONTROL_HOST", "localhost")
     REDIS_URL = f"redis://{REDIS_HOST}:23437/0"
 
-app: Celery = Celery("gradio_launcher", broker=REDIS_URL, backend=REDIS_URL)
+app: Celery = Celery("neuralforge_launcher", broker=REDIS_URL, backend=REDIS_URL)
 
 # Configuration for task routing
 app.conf.task_routes = {
     "tasks.manage_study": {"queue": "managers"},
-    "tasks.train_on_gpu": {"queue": "gpus"},
+    "tasks.train_on_gpu_simple": {"queue": "gpus_low"}, # Default fallback queue
 }
 
 # Essential settings for long-running studies and nested task waiting

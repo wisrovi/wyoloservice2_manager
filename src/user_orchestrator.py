@@ -100,6 +100,47 @@ def deep_update(base: dict, update: dict):
         else:
             base[k] = v
 
+def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:
+    """Recursively parses the search space and suggests values using Optuna.
+
+    Args:
+        trial (Trial): The Optuna trial object.
+        space (dict): The search space configuration.
+        prefix (str): Prefix for the parameter names.
+
+    Returns:
+        dict: A dictionary of suggested values.
+    """
+    suggestions = {}
+    for key, value in space.items():
+        name = f"{prefix}{key}"
+        if isinstance(value, dict):
+            suggestions[key] = parse_space(trial, value, f"{name}.")
+        elif isinstance(value, (list, tuple)) and len(value) >= 2:
+            dist_type = value[0]
+            args = value[1:]
+            try:
+                if dist_type == "choice":
+                    # Handle both ["choice", ["a", "b"]] and ["choice", "a", "b"]
+                    choices = args[0] if isinstance(args[0], list) else list(args)
+                    suggestions[key] = trial.suggest_categorical(name, choices)
+                elif dist_type == "uniform":
+                    suggestions[key] = trial.suggest_float(name, float(args[0]), float(args[1]))
+                elif dist_type == "loguniform":
+                    suggestions[key] = trial.suggest_float(name, float(args[0]), float(args[1]), log=True)
+                elif dist_type == "int":
+                    suggestions[key] = trial.suggest_int(name, int(args[0]), int(args[1]))
+                else:
+                    # Unknown distribution type, just pass it through
+                    suggestions[key] = value
+            except (ValueError, TypeError) as e:
+                print(f"Warning: Error parsing space for {name}: {e}. Using original value.")
+                suggestions[key] = value
+        else:
+            # If it's a static value, just pass it through
+            suggestions[key] = value
+    return suggestions
+
 def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
     """Creates a closure for the Optuna objective function.
     
@@ -130,7 +171,7 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
         deep_update(trial_config, full_config)
 
         # 3. Generate and apply Optuna suggestions
-        overrides: dict[str, Any] = parse_space(search_space)
+        overrides: dict[str, Any] = parse_space(trial, search_space)
         print(f"Trial {trial.number}: Suggested overrides from Optuna: {overrides}")
         deep_update(trial_config, overrides)
 
@@ -228,14 +269,23 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Invalid direction")
 
     # PostgreSQL configuration for Optuna storage
-    base_url = "postgresql://postgres:postgres@<IP>:23436/wyoloservice"
+    base_url = "postgresql://postgres:postgres@<IP>:23436/optuna_db"
     control_host = os.getenv("CONTROL_HOST", "192.168.10.252")
     storage_url = base_url.replace("<IP>", control_host)
 
     # Use RDBStorage directly with skip_compatibility_check=True to avoid the version mismatch error
     from optuna.storages import RDBStorage
 
-    storage = RDBStorage(storage_url, skip_compatibility_check=True)
+    try:
+        print(f"[*] Attempting to connect to Optuna storage: {storage_url}")
+        storage = RDBStorage(storage_url, skip_compatibility_check=True)
+        # Try to create a dummy study to test connection
+        optuna.create_study(storage=storage, study_name="test_connection", load_if_exists=True)
+    except Exception as e:
+        print(f"Warning: Could not connect to PostgreSQL storage: {e}")
+        storage_path = "sqlite:///src/optuna_study.db"
+        print(f"[*] Falling back to local SQLite storage: {storage_path}")
+        storage = RDBStorage(storage_path, skip_compatibility_check=True)
 
     study: optuna.Study = optuna.create_study(
         study_name=study_name,

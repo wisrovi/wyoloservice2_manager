@@ -8,7 +8,6 @@ services:
     restart: unless-stopped
     env_file:
       - control_host.env
-    network_mode: "host"
     volumes:
       - ./src:/app/src
     logging:
@@ -16,6 +15,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - control_network
 
   ui:
     build:
@@ -32,18 +33,25 @@ services:
       - ./gradio:/app/gradio
     depends_on:
       - manager_study
+    networks:
+      - control_network
 
-  tester:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.test
-    image: wisrovi/train_service_manager_tester:v1.0.0
-    container_name: wyolo_tester
-    profiles: ["debug"]
-    env_file:
-      - control_host.env
-    volumes:
-      - ./src:/app/src
-      - ./tests:/app/tests
-    depends_on:
-      - manager_study
+  # tester:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/Dockerfile.test
+  #   image: wisrovi/train_service_manager_tester:v1.0.0
+  #   container_name: wyolo_tester
+  #   profiles: ["debug"]
+  #   env_file:
+  #     - control_host.env
+  #   volumes:
+  #     - ./src:/app/src
+  #     - ./tests:/app/tests
+  #   depends_on:
+  #     - manager_study
+
+
+networks:
+  control_network:
+    external: true

@@ -33,7 +33,9 @@ graph TD
 
 - **🎯 Smart Orchestration**: Uses Optuna to find the best hyperparameters for your models.
 - **🛡️ Extreme Robustness**: Automatically repairs missing fields in your configuration using a fail-safe default layer.
-- **📈 Persistence**: All experiments, trials, and results are stored in PostgreSQL.
+- **🗄️ Database Fallback**: If PostgreSQL is unavailable, it automatically switches to local SQLite to ensure continuity.
+- **🔢 Type Safety**: Explicitly handles and casts hyperparameter types (floats, ints) from YAML to prevent Optuna type errors.
+- **📈 Persistence**: Experiments are stored in PostgreSQL or SQLite fallback.
 - **🚀 Flexible Routing**: Supports priority queues (`high`, `medium`, `low`) to manage cluster load.
 - **🖥️ Monitoring**: Integrated logging that shows the exact payload sent to workers.
 
