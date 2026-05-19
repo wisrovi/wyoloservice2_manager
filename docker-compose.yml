@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    image: wisrovi/train_service_manager_orchestrator_v1.0.0
+    image: wisrovi/train_service:manager_orchestrator_v1.0.0
     restart: unless-stopped
     env_file:
       - control_host.env
@@ -22,7 +22,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.gradio
-    image: wisrovi/train_service_manager_ui_v1.0.0
+    image: wisrovi/train_service:manager_ui_v1.0.0
     restart: unless-stopped
     env_file:
       - control_host.env

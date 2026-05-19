@@ -2,7 +2,7 @@ model: "yolov8n-cls.pt"
 type: "yolo"
 train:
   batch: -1
-  data: /datasets/clasification/colorball.v8i.multiclass/
+  data: /datasets/examples/clasification/colorball.v8i.multiclass/
   epochs: 1
   imgsz: 640
   device: 0
@@ -19,12 +19,13 @@ sweeper:
   tune: true
   sampler: "TPESampler"
   n_trials: 3
-  priority: "high"
+  priority: "low"
   search_space:
-    model: [ "choice", "yolov8n-cls.pt" ]
+    model: [ "choice", "yolov8n-cls.pt", "yolov8s-cls.pt", "yolov8m-cls.pt" ]
     train:
-      imgsz: [ "choice", 416 ]
+      imgsz: [ "choice", 416, 640, 720, 960, 1080 ]
       lr0: [ "loguniform", 1e-5, 1e-2 ]
+
 extras:
   gpu:
     id: 0
