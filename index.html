@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orchestrator Manager | WDarwin Ops Brain</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' style='stop-color:%23a855f7'/><stop offset='100%25' style='stop-color:%233b82f6'/></linearGradient></defs><rect width='100' height='100' rx='20' fill='url(%23g)'/><path d='M30 50 L45 65 L70 35' stroke='white' stroke-width='8' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #a855f7;
+            --bg-deep: #030712;
+            --bg-card: rgba(17, 24, 39, 0.6);
+            --text-main: #f9fafb;
+            --text-dim: #9ca3af;
+            --border: rgba(255, 255, 255, 0.08);
+            --gradient-linear: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-deep); color: var(--text-main); overflow-x: hidden; background-image: radial-gradient(at 100% 0%, hsla(270, 100%, 50%, 0.1) 0, transparent 50%); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 2rem; }
+        .gradient-text { background: var(--gradient-linear); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .hero { height: 100vh; display: flex; align-items: center; justify-content: center; text-align: center; }
+        .hero h1 { font-size: clamp(3rem, 8vw, 6rem); font-weight: 800; margin-bottom: 1.5rem; }
+        .hero p { font-size: 1.25rem; color: var(--text-dim); max-width: 800px; margin: 0 auto 3rem; }
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; padding: 100px 0; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); padding: 3rem; border-radius: 24px; transition: all 0.4s; }
+        .card:hover { transform: translateY(-10px); border-color: var(--primary); }
+        .icon { font-size: 2.5rem; color: var(--primary); margin-bottom: 2rem; }
+    </style>
+</head>
+<body>
+    <section class="hero">
+        <div class="container">
+            <div style="color: var(--primary); font-weight: 700; margin-bottom: 1rem; letter-spacing: 0.2em;">THE EVOLUTIONARY BRAIN</div>
+            <h1>Genetic <span class="gradient-text">Orchestration</span></h1>
+            <p>
+                The Manager service is the heart of WDarwin Ops. 
+                Using Optuna and Genetic Algorithms to evolve the best hyperparameters, 
+                dispatching tasks to the Hive, and ensuring only the fittest models survive.
+            </p>
+            <div class="features">
+                <div class="card">
+                    <div class="icon"><i class="fas fa-dna"></i></div>
+                    <h3>Hyperparameter Evolution</h3>
+                    <p>Automated search for optimal learning rates, image sizes, and batch configurations.</p>
+                </div>
+                <div class="card">
+                    <div class="icon"><i class="fas fa-sitemap"></i></div>
+                    <h3>Task Dispatcher</h3>
+                    <p>Intelligent routing of training jobs to available GPU workers based on priority and load.</p>
+                </div>
+                <div class="card">
+                    <div class="icon"><i class="fas fa-database"></i></div>
+                    <h3>Optuna Storage</h3>
+                    <p>Full persistence of study histories in PostgreSQL for long-term experiment analysis.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+</body>
+</html>
