@@ -2,7 +2,7 @@ model: "yolov8n-cls.pt"
 type: "yolo"
 train:
   batch: -1
-  data: /datasets/examples/clasification/colorball.v8i.multiclass/
+  data: /datasets/examples/classification/colorball.v8i.multiclass/
   epochs: 1
   imgsz: 640
   device: 0

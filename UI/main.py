@@ -1,15 +1,17 @@
 import os
-import yaml
 from typing import Any
+
+import gradio as gr
+import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-import gradio as gr
-from UI.launcher import demo as launcher_demo
+
 from app.celery_config import app as celery_app
+from UI.launcher import demo as launcher_demo
 
 app = FastAPI(
     title="Wyolo Manager UI",
@@ -30,26 +32,31 @@ OPTUNA_DB_URL = f"postgresql://postgres:postgres@{CONTROL_HOST}:23436/optuna_db"
 engine = create_engine(OPTUNA_DB_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 # Routes
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     return templates.TemplateResponse(request=request, name="dashboard.html")
+
 
 # API for Dashboard (Reused from simple_dashboard)
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}
 
+
 @app.get("/api/studies")
 async def list_studies():
     try:
         with engine.connect() as conn:
-            result = conn.execute(text("""
-                SELECT 
+            result = conn.execute(
+                text("""
+                SELECT
                     s.study_id,
                     s.study_name,
                     sd.direction,
@@ -58,10 +65,12 @@ async def list_studies():
                 FROM studies s
                 LEFT JOIN study_directions sd ON s.study_id = sd.study_id
                 ORDER BY start_time DESC NULLS LAST
-            """))
+            """)
+            )
             return {"studies": [dict(row._mapping) for row in result.fetchall()]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/stats")
 async def get_overall_stats():
@@ -90,25 +99,29 @@ async def get_overall_stats():
     except Exception as e:
         return {"error": str(e)}
 
+
 @app.get("/api/workers")
 async def get_workers():
     try:
         inspect = celery_app.control.inspect()
         stats = inspect.stats()
         active = inspect.active()
-        
+
         workers = []
         if stats:
             for name, w_stats in stats.items():
-                workers.append({
-                    "name": name,
-                    "status": "online",
-                    "stats": w_stats,
-                    "active_tasks": active.get(name, []) if active else []
-                })
+                workers.append(
+                    {
+                        "name": name,
+                        "status": "online",
+                        "stats": w_stats,
+                        "active_tasks": active.get(name, []) if active else [],
+                    }
+                )
         return {"workers": workers, "count": len(workers)}
     except Exception as e:
         return {"error": str(e)}
+
 
 @app.get("/api/studies/{study_name}/trials")
 async def get_study_trials(study_name: str):
@@ -116,7 +129,7 @@ async def get_study_trials(study_name: str):
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
-                SELECT 
+                SELECT
                     t.trial_id,
                     t.study_id,
                     t.state,
@@ -138,7 +151,7 @@ async def get_study_trials(study_name: str):
                 # Fetch params for each trial
                 params_result = conn.execute(
                     text("SELECT param_name, param_value FROM trial_params WHERE trial_id = :trial_id"),
-                    {"trial_id": trial["trial_id"]}
+                    {"trial_id": trial["trial_id"]},
                 )
                 trial["params"] = {p[0]: p[1] for p in params_result.fetchall()}
                 trials.append(trial)
@@ -146,27 +159,32 @@ async def get_study_trials(study_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/queues")
 async def get_queues():
     try:
         import redis
+
         # Connect directly to redis to get queue lengths
         r = redis.Redis.from_url(os.getenv("REDIS_URL", f"redis://{CONTROL_HOST}:23437/0"))
-        
+
         # Define the queues we care about in the manager
         monitored_queues = ["managers", "gpus_high", "gpus_medium", "gpus_low", "gpus_debug"]
-        
+
         queues = []
         for q_name in monitored_queues:
             length = r.llen(q_name)
-            queues.append({
-                "name": q_name,
-                "items": length,
-                "priority": "high" if "high" in q_name or "managers" in q_name else "low"
-            })
+            queues.append(
+                {
+                    "name": q_name,
+                    "items": length,
+                    "priority": "high" if "high" in q_name or "managers" in q_name else "low",
+                }
+            )
         return {"queues": queues, "count": len(queues)}
     except Exception as e:
         return {"queues": [], "count": 0, "error": str(e)}
+
 
 @app.get("/api/workers/active-tasks")
 async def get_active_tasks():
@@ -177,20 +195,24 @@ async def get_active_tasks():
         if active:
             for worker_name, worker_tasks in active.items():
                 for task in worker_tasks:
-                    tasks.append({
-                        "worker": worker_name,
-                        "id": task.get("id"),
-                        "name": task.get("name"),
-                        "args": task.get("args", []),
-                        "kwargs": task.get("kwargs", {}),
-                    })
+                    tasks.append(
+                        {
+                            "worker": worker_name,
+                            "id": task.get("id"),
+                            "name": task.get("name"),
+                            "args": task.get("args", []),
+                            "kwargs": task.get("kwargs", {}),
+                        }
+                    )
         return {"tasks": tasks, "count": len(tasks)}
     except Exception as e:
         return {"tasks": [], "count": 0, "error": str(e)}
+
 
 # Mount Gradio Launcher
 app = gr.mount_gradio_app(app, launcher_demo, path="/launcher")
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=80)
