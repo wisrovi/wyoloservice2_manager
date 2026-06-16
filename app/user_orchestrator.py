@@ -8,30 +8,30 @@ execution and supports dynamic search spaces.
 import copy
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable  # pylint: disable=import-error
 from typing import Any, Optional
 
-import optuna
-from celery.result import AsyncResult
-from optuna.storages import RDBStorage
-from optuna.trial import Trial
+import optuna  # pylint: disable=import-error
+from celery.result import AsyncResult  # pylint: disable=import-error
+from optuna.storages import RDBStorage  # pylint: disable=import-error
+from optuna.trial import Trial  # pylint: disable=import-error
 
 # Import the Celery app configuration
-from .celery_config import app
+from .celery_config import app as celery_app
 
 
-def check_queue_active(app, queue_name: str) -> bool:
+def check_queue_active(app_instance: Any, queue_name: str) -> bool:
     """Checks if there is at least one active worker listening to the specified queue.
 
     Args:
-        app: The Celery app instance.
+        app_instance: The Celery app instance.
         queue_name (str): Name of the queue to check.
 
     Returns:
         bool: True if the queue is active, False otherwise.
     """
     try:
-        inspector = app.control.inspect()
+        inspector = app_instance.control.inspect()
         # This can be slow as it queries all workers via broadcast
         queues_data = inspector.active_queues()
         if not queues_data:
@@ -42,7 +42,7 @@ def check_queue_active(app, queue_name: str) -> bool:
                 if q.get("name") == queue_name:
                     return True
         return False
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"Warning: Could not inspect queues: {e}")
         # If we can't inspect, we assume it might exist to avoid blocking
         return True
@@ -50,6 +50,7 @@ def check_queue_active(app, queue_name: str) -> bool:
 
 def wait_for_result(job: AsyncResult) -> Any:
     """Blocks until the Celery task is ready and returns the result safely.
+
     Avoids using job.get() to bypass Celery's safety check for synchronous subtasks.
 
     Args:
@@ -65,11 +66,10 @@ def wait_for_result(job: AsyncResult) -> Any:
 
         if job.successful():
             return job.result
-        else:
-            # result attribute on AsyncResult contains the exception in case of FAILURE
-            print(f"Task {job.id} failed with state: {job.state}. Error: {job.result}")
-            return None
-    except Exception as e:
+        # result attribute on AsyncResult contains the exception in case of FAILURE
+        print(f"Task {job.id} failed with state: {job.state}. Error: {job.result}")
+        return None
+    except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"Error waiting for task {job.id}: {str(e)}")
         return None
 
@@ -95,7 +95,7 @@ BASE_DEFAULT_CONFIG = {
 }
 
 
-def deep_update(base: dict, update: dict):
+def deep_update(base: dict, update: dict) -> None:
     """Recursively updates a dictionary."""
     for k, v in update.items():
         if isinstance(v, dict) and k in base and isinstance(base[k], dict):
@@ -104,7 +104,7 @@ def deep_update(base: dict, update: dict):
             base[k] = v
 
 
-def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:
+def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:  # noqa: PLR0912  # pylint: disable=too-many-branches
     """Recursively parses the search space and suggests values using Optuna.
 
     Args:
@@ -115,7 +115,7 @@ def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:
     Returns:
         dict: A dictionary of suggested values.
     """
-    suggestions = {}
+    suggestions: dict[str, Any] = {}
     for key, value in space.items():
         name = f"{prefix}{key}"
         if isinstance(value, dict):
@@ -129,31 +129,31 @@ def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:
                     choices = args[0] if isinstance(args[0], list) else list(args)
                     try:
                         suggestions[key] = trial.suggest_categorical(name, choices)
-                    except Exception as e:
+                    except Exception as e:  # pylint: disable=broad-exception-caught
                         print(f"Warning: Optuna categorical error for {name}: {e}. Using first choice as fallback.")
                         suggestions[key] = choices[0]
                 elif dist_type == "uniform":
                     try:
                         suggestions[key] = trial.suggest_float(name, float(args[0]), float(args[1]))
-                    except Exception as e:
+                    except Exception as e:  # pylint: disable=broad-exception-caught
                         print(f"Warning: Optuna float error for {name}: {e}. Using lower bound as fallback.")
                         suggestions[key] = float(args[0])
                 elif dist_type == "loguniform":
                     try:
                         suggestions[key] = trial.suggest_float(name, float(args[0]), float(args[1]), log=True)
-                    except Exception as e:
+                    except Exception as e:  # pylint: disable=broad-exception-caught
                         print(f"Warning: Optuna loguniform error for {name}: {e}. Using lower bound as fallback.")
                         suggestions[key] = float(args[0])
                 elif dist_type == "int":
                     try:
                         suggestions[key] = trial.suggest_int(name, int(args[0]), int(args[1]))
-                    except Exception as e:
+                    except Exception as e:  # pylint: disable=broad-exception-caught
                         print(f"Warning: Optuna int error for {name}: {e}. Using lower bound as fallback.")
                         suggestions[key] = int(args[0])
                 else:
                     # Unknown distribution type, just pass it through
                     suggestions[key] = value
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 print(f"Critical error in parse_space for {name}: {e}. Using original value.")
                 suggestions[key] = value
         else:
@@ -173,18 +173,15 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
     priority = sweeper_in.get("priority", "low")
     debug_val = sweeper_in.get("debug", False)
 
-    if debug_val:
-        worker_queue = debug_val if isinstance(debug_val, str) else "gpus_debug"
-    else:
-        worker_queue = f"gpus_{priority}"
+    worker_queue = (debug_val if isinstance(debug_val, str) else "gpus_debug") if debug_val else f"gpus_{priority}"
 
     search_space: dict[str, Any] = sweeper_in.get("search_space", {})
 
     def objective(trial: Trial) -> float:
-        import yaml as yaml_log
+        import yaml as yaml_log  # type: ignore # pylint: disable=import-error,import-outside-toplevel
 
         # 1. Start with the HARDCODED defaults as ultimate safety net
-        trial_config = copy.deepcopy(BASE_DEFAULT_CONFIG)
+        trial_config: dict[str, Any] = copy.deepcopy(BASE_DEFAULT_CONFIG)
 
         # 2. Merge with the USER'S full configuration (overwrites defaults)
         deep_update(trial_config, full_config)
@@ -212,21 +209,23 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
         print(f"--- [TRIAL {trial.number} PAYLOAD END] ---\n")
 
         # Validate queue before sending
-        if not check_queue_active(app, worker_queue):
+        if not check_queue_active(celery_app, worker_queue):
             print(f"WARNING: No active workers for '{worker_queue}'. Task might hang.")
 
         # Dispatch the trial task to the worker with retries
-        MAX_RETRIES = 3
-        RETRY_DELAY = 5
+        max_retries = 3
+        retry_delay = 5
         attempt = 0
         result = None
 
-        while attempt < MAX_RETRIES:
+        while attempt < max_retries:
             attempt += 1
-            print(f"Trial {trial.number}: Dispatching task to queue '{worker_queue}' (Attempt {attempt}/{MAX_RETRIES})")
+            print(f"Trial {trial.number}: Dispatching task to queue '{worker_queue}' (Attempt {attempt}/{max_retries})")
 
             # Dispatch the trial task to the worker
-            job: AsyncResult = app.send_task("tasks.train_on_gpu_simple", args=[trial_config], queue=worker_queue)
+            job: AsyncResult = celery_app.send_task(
+                "tasks.train_on_gpu_simple", args=[trial_config], queue=worker_queue
+            )
 
             # Wait for completion and extract the metric
             result = wait_for_result(job)
@@ -236,23 +235,22 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
                 acc = float(result["accuracy"])
                 if acc >= 0:
                     return acc
-                else:
-                    print(f"Warning: Trial {trial.number} returned negative accuracy ({acc}). Possible training error.")
+                print(f"Warning: Trial {trial.number} returned negative accuracy ({acc}). Possible training error.")
 
             print(f"[-] Trial {trial.number} attempt {attempt} failed or returned invalid result. Result: {result}")
 
-            if attempt < MAX_RETRIES:
-                print(f"[*] Waiting {RETRY_DELAY}s before retrying...")
-                time.sleep(RETRY_DELAY)
+            if attempt < max_retries:
+                print(f"[*] Waiting {retry_delay}s before retrying...")
+                time.sleep(retry_delay)
 
-        print(f"[-] Critical: Trial {trial.number} failed after {MAX_RETRIES} attempts.")
+        print(f"[-] Critical: Trial {trial.number} failed after {max_retries} attempts.")
         # If we reach here, all retries failed. Mark as 0.0 or raise error to let Optuna handle it.
         return 0.0
 
     return objective
 
 
-@app.task(name="tasks.manage_study")
+@celery_app.task(name="tasks.manage_study")
 def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
     """Orchestrates an entire Optuna study.
 
@@ -264,29 +262,29 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
     """
     sweeper_cfg: dict[str, Any] = full_config.get("sweeper", {})
     study_name: str = sweeper_cfg.get("study_name", "default_study")
-    DIRECTION: str = sweeper_cfg.get("direction", "maximize")
+    direction_val: str = sweeper_cfg.get("direction", "maximize")
     n_trials: int = int(sweeper_cfg.get("n_trials", 10))
 
-    SAMPLER = sweeper_cfg.get("sampler", "TPESampler")
+    sampler_val = sweeper_cfg.get("sampler", "TPESampler")
 
-    if SAMPLER == "TPESampler":
+    if sampler_val == "TPESampler":
         sampler = optuna.samplers.TPESampler()
-    elif SAMPLER == "RandomSampler":
+    elif sampler_val == "RandomSampler":
         sampler = optuna.samplers.RandomSampler()
-    elif SAMPLER == "CmaEsSampler":
+    elif sampler_val == "CmaEsSampler":
         sampler = optuna.samplers.CmaEsSampler()
     else:
         raise ValueError("Invalid sampler")
 
-    if DIRECTION == "maximize":
+    if direction_val == "maximize":
         direction = optuna.study.StudyDirection.MAXIMIZE
-    elif DIRECTION == "minimize":
+    elif direction_val == "minimize":
         direction = optuna.study.StudyDirection.MINIMIZE
     else:
         raise ValueError("Invalid direction")
 
     # PostgreSQL configuration for Optuna storage
-    base_url = "postgresql://postgres:postgres@<IP>:23436/optuna_db"
+    base_url = "postgresql://postgres:postgres@<IP>:23436/optuna_db"  # pragma: allowlist secret
     control_host = os.getenv("CONTROL_HOST", "192.168.10.252")
     storage_url = base_url.replace("<IP>", control_host)
 
@@ -297,7 +295,7 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         storage = RDBStorage(storage_url, skip_compatibility_check=True)
         # Try to create a dummy study to test connection
         optuna.create_study(storage=storage, study_name="test_connection", load_if_exists=True)
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"Warning: Could not connect to PostgreSQL storage: {e}")
         storage_path = "sqlite:///src/optuna_study.db"
         print(f"[*] Falling back to local SQLite storage: {storage_path}")
@@ -314,7 +312,7 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
     # Run the optimization loop
     try:
         study.optimize(create_objective(full_config), n_trials=n_trials)
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"[-] Critical error during Optuna optimization: {e}")
         return {"status": "failed", "error": str(e), "study_name": study_name}
 

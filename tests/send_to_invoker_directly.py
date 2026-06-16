@@ -1,10 +1,11 @@
-REDIS_HOST = "192.168.10.252"
-
+"""Test sending to invoker directly."""
 
 import os
 
-import yaml
-from celery import Celery
+import yaml  # pylint: disable=import-error
+from celery import Celery  # pylint: disable=import-error
+
+REDIS_HOST = "192.168.10.252"
 
 # --- User Configuration (Hardcoded) ---
 # Modifica estas variables según tus necesidades
@@ -16,7 +17,7 @@ QUEUE_NAME = "gpus_high"  # Opciones: gpus_high, gpus_medium, gpus_low, default
 YAML_CONFIG_PATH = "test_to_send_invoker.yaml"
 
 # Internal YAML Template (used if YAML_CONFIG_PATH is not found)
-DEFAULT_CONFIG = {
+DEFAULT_CONFIG = {  # pylint: disable=duplicate-code
     "model": "yolov8n.pt",
     "type": "yolo",
     "train": {
@@ -46,17 +47,18 @@ def load_config():
         print(f"[*] Loading configuration from {YAML_CONFIG_PATH}...")
         with open(YAML_CONFIG_PATH, encoding="utf-8") as f:
             return yaml.safe_load(f)
-    else:
-        print(f"[!] {YAML_CONFIG_PATH} not found. Using hardcoded default configuration.")
 
-        # save the default_config
-        with open(YAML_CONFIG_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(DEFAULT_CONFIG, f)
+    print(f"[!] {YAML_CONFIG_PATH} not found. Using hardcoded default configuration.")
 
-        return DEFAULT_CONFIG
+    # save the default_config
+    with open(YAML_CONFIG_PATH, "w", encoding="utf-8") as f:
+        yaml.safe_dump(DEFAULT_CONFIG, f)
+
+    return DEFAULT_CONFIG
 
 
 def launch_task():
+    """Launch the task."""
     payload = load_config()
 
     # Basic Validation
@@ -80,7 +82,7 @@ def launch_task():
         print(f"Type:  {payload['type']}")
         print("=" * 40)
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"[-] Critical Error sending task: {e}")
 
 

@@ -1,11 +1,12 @@
-REDIS_HOST = "192.168.10.252"
-
+"""Test sending to manager directly."""
 
 import os
 import sys
 
-import yaml
-from celery import Celery
+import yaml  # pylint: disable=import-error
+from celery import Celery  # pylint: disable=import-error
+
+REDIS_HOST = "192.168.10.252"
 
 # Ensure the parent directory is in the path so we can import src
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,6 +20,7 @@ celery_app = Celery("neuralforge_launcher", broker=REDIS_URL, backend=REDIS_URL)
 
 
 def send_test_study():
+    """Send a test study to the manager."""
     # Use relative path based on this script's location
     base_dir = os.path.dirname(os.path.abspath(__file__))
     yaml_path = os.path.join(base_dir, "test_to_send_manager.yaml")
@@ -28,7 +30,7 @@ def send_test_study():
         return
 
     print(f"[*] Reading configuration from: {yaml_path}")
-    with open(yaml_path) as f:
+    with open(yaml_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     study_name = config.get("sweeper", {}).get("study_name", "unknown")
@@ -47,7 +49,7 @@ def send_test_study():
         print("[*] Task sent to 'managers' queue.")
         print("[*] MONITOR: docker logs wyolo_manager -f")
         print("=" * 40)
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"[-] Error sending task: {e}")
         print("[!] Ensure CONTROL_HOST or REDIS_URL is set in your environment.")
 

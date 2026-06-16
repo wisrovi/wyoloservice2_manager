@@ -1,44 +1,26 @@
-"""Celery configuration module for the Manager component.
-
-This module initializes the Celery application with settings optimized for
-long-running orchestration tasks, including trial sequencing and result persistence.
-"""
+"""Celery configuration for Wyolo Manager."""
 
 import os
-from typing import Any
 
-import celery.result
-from celery import Celery
+from celery import Celery  # pylint: disable=import-error
+from celery.result import AsyncResult  # pylint: disable=import-error,unused-import
 
-# Get Redis URL from environment
-REDIS_URL = os.getenv("REDIS_URL")
+# Use redis instead of rabbitmq
+CONTROL_HOST = os.getenv("CONTROL_HOST", "192.168.10.252")
+REDIS_URL = os.getenv("REDIS_URL", f"redis://{CONTROL_HOST}:23437/0")
 
-if not REDIS_URL:
-    # Fallback to CONTROL_HOST or localhost if REDIS_URL is not set
-    REDIS_HOST = os.getenv("CONTROL_HOST", "192.168.10.252")
-    REDIS_URL = f"redis://{REDIS_HOST}:23437/0"
+app = Celery(
+    "wyolo",
+    broker=REDIS_URL,
+    backend=REDIS_URL,
+)
 
-app: Celery = Celery("neuralforge_launcher", broker=REDIS_URL, backend=REDIS_URL)
-
-# Configuration for task routing
-app.conf.task_routes = {
-    "tasks.manage_study": {"queue": "managers"},
-    "tasks.train_on_gpu_simple": {"queue": "gpus_low"},  # Default fallback queue
-}
-
-# Essential settings for long-running studies and nested task waiting
-celery_settings: dict[str, Any] = {
-    "task_acks_late": True,
-    "worker_prefetch_multiplier": 1,
-    "result_expires": 86400,  # 24 hours
-    "task_always_eager": False,
-    "result_persistent": True,
-    "task_track_started": True,
-}
-
-app.conf.update(celery_settings)
-
-# Allow .get() inside tasks, required for Optuna trial orchestration
-# This is a critical setting for the Manager to wait for Invoker results
-
-celery.result.allow_join_result()
+app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+    task_track_started=True,
+    worker_prefetch_multiplier=1,
+)
