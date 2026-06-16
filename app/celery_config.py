@@ -1,6 +1,3 @@
-
-
-
 """Celery configuration module for the Manager component.
 
 This module initializes the Celery application with settings optimized for
@@ -9,6 +6,7 @@ long-running orchestration tasks, including trial sequencing and result persiste
 
 import os
 from typing import Any
+
 import celery.result
 from celery import Celery
 
@@ -25,7 +23,7 @@ app: Celery = Celery("neuralforge_launcher", broker=REDIS_URL, backend=REDIS_URL
 # Configuration for task routing
 app.conf.task_routes = {
     "tasks.manage_study": {"queue": "managers"},
-    "tasks.train_on_gpu_simple": {"queue": "gpus_low"}, # Default fallback queue
+    "tasks.train_on_gpu_simple": {"queue": "gpus_low"},  # Default fallback queue
 }
 
 # Essential settings for long-running studies and nested task waiting
@@ -42,6 +40,5 @@ app.conf.update(celery_settings)
 
 # Allow .get() inside tasks, required for Optuna trial orchestration
 # This is a critical setting for the Manager to wait for Invoker results
-import celery.result
 
 celery.result.allow_join_result()

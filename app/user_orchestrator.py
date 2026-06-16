@@ -5,14 +5,16 @@ dispatching training trials to workers through Celery. It ensures sequential
 execution and supports dynamic search spaces.
 """
 
+import copy
 import os
 import time
-from typing import Any, Callable, Optional
-import copy
+from collections.abc import Callable
+from typing import Any, Optional
+
 import optuna
-from optuna.trial import Trial
-from optuna.storages import RDBStorage
 from celery.result import AsyncResult
+from optuna.storages import RDBStorage
+from optuna.trial import Trial
 
 # Import the Celery app configuration
 from .celery_config import app
@@ -78,7 +80,7 @@ BASE_DEFAULT_CONFIG = {
     "type": "yolo",
     "train": {
         "batch": -1,
-        "data": "/datasets/clasification/colorball.v8i.multiclass/",
+        "data": "/datasets/classification/colorball.v8i.multiclass/",
         "epochs": 2,
         "imgsz": 640,
     },
@@ -92,6 +94,7 @@ BASE_DEFAULT_CONFIG = {
     },
 }
 
+
 def deep_update(base: dict, update: dict):
     """Recursively updates a dictionary."""
     for k, v in update.items():
@@ -99,6 +102,7 @@ def deep_update(base: dict, update: dict):
             deep_update(base[k], v)
         else:
             base[k] = v
+
 
 def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:
     """Recursively parses the search space and suggests values using Optuna.
@@ -157,13 +161,13 @@ def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:
             suggestions[key] = value
     return suggestions
 
+
 def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
     """Creates a closure for the Optuna objective function.
-    
+
     Args:
         full_config (dict[str, Any]): The full YAML configuration for the study.
     """
-    
     # Pre-calculate worker queue based on input config (independent of Optuna trials)
     sweeper_in = full_config.get("sweeper", {})
     priority = sweeper_in.get("priority", "low")
@@ -177,12 +181,11 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
     search_space: dict[str, Any] = sweeper_in.get("search_space", {})
 
     def objective(trial: Trial) -> float:
-        import copy
         import yaml as yaml_log
 
         # 1. Start with the HARDCODED defaults as ultimate safety net
         trial_config = copy.deepcopy(BASE_DEFAULT_CONFIG)
-        
+
         # 2. Merge with the USER'S full configuration (overwrites defaults)
         deep_update(trial_config, full_config)
 
@@ -221,15 +224,13 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
         while attempt < MAX_RETRIES:
             attempt += 1
             print(f"Trial {trial.number}: Dispatching task to queue '{worker_queue}' (Attempt {attempt}/{MAX_RETRIES})")
-            
+
             # Dispatch the trial task to the worker
-            job: AsyncResult = app.send_task(
-                "tasks.train_on_gpu_simple", args=[trial_config], queue=worker_queue
-            )
+            job: AsyncResult = app.send_task("tasks.train_on_gpu_simple", args=[trial_config], queue=worker_queue)
 
             # Wait for completion and extract the metric
             result = wait_for_result(job)
-            
+
             # Check if result is valid and accuracy is non-negative
             if isinstance(result, dict) and "accuracy" in result:
                 acc = float(result["accuracy"])
@@ -237,9 +238,9 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
                     return acc
                 else:
                     print(f"Warning: Trial {trial.number} returned negative accuracy ({acc}). Possible training error.")
-            
+
             print(f"[-] Trial {trial.number} attempt {attempt} failed or returned invalid result. Result: {result}")
-            
+
             if attempt < MAX_RETRIES:
                 print(f"[*] Waiting {RETRY_DELAY}s before retrying...")
                 time.sleep(RETRY_DELAY)
@@ -290,7 +291,6 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
     storage_url = base_url.replace("<IP>", control_host)
 
     # Use RDBStorage directly with skip_compatibility_check=True to avoid the version mismatch error
-    from optuna.storages import RDBStorage
 
     try:
         print(f"[*] Attempting to connect to Optuna storage: {storage_url}")
@@ -316,11 +316,7 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         study.optimize(create_objective(full_config), n_trials=n_trials)
     except Exception as e:
         print(f"[-] Critical error during Optuna optimization: {e}")
-        return {
-            "status": "failed",
-            "error": str(e),
-            "study_name": study_name
-        }
+        return {"status": "failed", "error": str(e), "study_name": study_name}
 
     return {
         "status": "completed",

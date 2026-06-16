@@ -15,4 +15,3 @@ Welcome to Orchestrator Manager's documentation!
 Overview
 --------
 The genetic algorithm brain powered by Optuna for hyperparameter evolution.
-

@@ -1,9 +1,10 @@
 REDIS_HOST = "192.168.10.252"
 
 
-import yaml
 import os
 import sys
+
+import yaml
 from celery import Celery
 
 # Ensure the parent directory is in the path so we can import src
@@ -27,7 +28,7 @@ def send_test_study():
         return
 
     print(f"[*] Reading configuration from: {yaml_path}")
-    with open(yaml_path, "r") as f:
+    with open(yaml_path) as f:
         config = yaml.safe_load(f)
 
     study_name = config.get("sweeper", {}).get("study_name", "unknown")
@@ -43,8 +44,8 @@ def send_test_study():
 
         print("\n" + "=" * 40)
         print(f"✅ Success! Task ID: {result.id}")
-        print(f"[*] Task sent to 'managers' queue.")
-        print(f"[*] MONITOR: docker logs wyolo_manager -f")
+        print("[*] Task sent to 'managers' queue.")
+        print("[*] MONITOR: docker logs wyolo_manager -f")
         print("=" * 40)
     except Exception as e:
         print(f"[-] Error sending task: {e}")
