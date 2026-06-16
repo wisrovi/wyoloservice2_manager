@@ -11,10 +11,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY src/ ./src/
+COPY app/ ./app/
+COPY UI/ ./UI/
 
-# Set Python path to include the app directory
+# Set Python path to include the project directory
 ENV PYTHONPATH="/app:${PYTHONPATH}"
 
-# Start Celery worker
-CMD ["celery", "-A", "src.user_orchestrator", "worker", "-Q", "managers", "--concurrency=1", "-P", "solo", "--loglevel=info"]
+# Expose FastAPI/Gradio port
+EXPOSE 80
+
+# Start Unified UI app
+CMD ["python", "UI/main.py"]

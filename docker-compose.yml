@@ -3,55 +3,47 @@ services:
     container_name: wyolo_manager
     build:
       context: .
-      dockerfile: docker/Dockerfile
+      dockerfile: app/Dockerfile
     image: wisrovi/train_service:manager_orchestrator_v1.0.0
     restart: unless-stopped
     env_file:
       - control_host.env
     volumes:
-      - ./src:/app/src
+      - ./app:/app/app
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    networks:
-      - control_network
 
   ui:
+    container_name: wyolo_ui
     build:
       context: .
-      dockerfile: docker/Dockerfile.gradio
-    image: wisrovi/train_service:manager_ui_v1.0.0
+      dockerfile: UI/Dockerfile
+    image: wisrovi/train_service:manager_ui_v2.0.0
     restart: unless-stopped
     env_file:
       - control_host.env
     ports:
-      - "7860:7860"
+      - "80:80"
     volumes:
-      - ./src:/app/src
-      - ./gradio:/app/gradio
+      - ./app:/app/app
+      - ./UI:/app/UI
     depends_on:
       - manager_study
-    networks:
-      - control_network
 
   # tester:
   #   build:
   #     context: .
-  #     dockerfile: docker/Dockerfile.test
+  #     dockerfile: tests/Dockerfile
   #   image: wisrovi/train_service_manager_tester:v1.0.0
   #   container_name: wyolo_tester
   #   profiles: ["debug"]
   #   env_file:
   #     - control_host.env
   #   volumes:
-  #     - ./src:/app/src
+  #     - ./app:/app/app
   #     - ./tests:/app/tests
   #   depends_on:
   #     - manager_study
-
-
-networks:
-  control_network:
-    external: true

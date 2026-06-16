@@ -17,7 +17,7 @@ REDIS_URL = os.getenv("REDIS_URL")
 
 if not REDIS_URL:
     # Fallback to CONTROL_HOST or localhost if REDIS_URL is not set
-    REDIS_HOST = os.getenv("CONTROL_HOST", "localhost")
+    REDIS_HOST = os.getenv("CONTROL_HOST", "192.168.10.252")
     REDIS_URL = f"redis://{REDIS_HOST}:23437/0"
 
 app: Celery = Celery("neuralforge_launcher", broker=REDIS_URL, backend=REDIS_URL)
