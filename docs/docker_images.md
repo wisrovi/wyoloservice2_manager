@@ -71,7 +71,7 @@ services:
 ```bash
 # Required for all services
 REDIS_URL=redis://192.168.10.252:23437/0
-OPTUNA_DB_URL=postgresql://postgres:postgres@192.168.10.252:23436/wyoloservice
+OPTUNA_DB_URL=postgresql://postgres:postgres@192.168.10.252:23436/wyoloservice  # pragma: allowlist secret
 
 # Worker specific
 WORKER_NAME=gpu_node_01

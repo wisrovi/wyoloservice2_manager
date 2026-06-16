@@ -1,19 +1,23 @@
+"""Launcher UI for Wyolo."""
+
 import os
+from typing import Any
 
 import gradio as gr
-import yaml
+import yaml  # type: ignore # pylint: disable=import-error
 
 # Absolute import from the package
 from app.celery_config import app
 
 
-def launch_study(yaml_file):
+def launch_study(yaml_file: Any) -> str:
+    """Launch a study from a YAML file."""
     if yaml_file is None:
         return "Please upload a YAML configuration file."
 
     try:
         # Load the configuration from the uploaded file
-        with open(yaml_file.name) as f:
+        with open(yaml_file.name, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         if not config:
@@ -34,7 +38,7 @@ def launch_study(yaml_file):
             f"Check logs with: docker logs wyolo_manager -f"
         )
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         return f"❌ Error launching study: {str(e)}"
 
 
@@ -75,5 +79,5 @@ sweeper:
 
 if __name__ == "__main__":
     # Get port from environment or default to 7860
-    port = int(os.getenv("GRADIO_PORT", 7860))
-    demo.launch(server_name="0.0.0.0", server_port=port)
+    port = int(os.getenv("GRADIO_PORT", "7860"))
+    demo.launch(server_name="0.0.0.0", server_port=port)  # nosec B104
