@@ -11,14 +11,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY src/ ./src/
-COPY gradio/ ./gradio/
+COPY app/ ./app/
 
-# Set Python path to include the src directory
+# Set Python path to include the app directory
 ENV PYTHONPATH="/app:${PYTHONPATH}"
 
-# Expose Gradio port
-EXPOSE 7860
-
-# Start Gradio app
-CMD ["python", "gradio/app.py"]
+# Start Celery worker
+CMD ["celery", "-A", "app.user_orchestrator", "worker", "-Q", "managers", "--concurrency=1", "-P", "solo", "--loglevel=info"]

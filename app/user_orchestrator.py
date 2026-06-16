@@ -123,18 +123,34 @@ def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:
                 if dist_type == "choice":
                     # Handle both ["choice", ["a", "b"]] and ["choice", "a", "b"]
                     choices = args[0] if isinstance(args[0], list) else list(args)
-                    suggestions[key] = trial.suggest_categorical(name, choices)
+                    try:
+                        suggestions[key] = trial.suggest_categorical(name, choices)
+                    except Exception as e:
+                        print(f"Warning: Optuna categorical error for {name}: {e}. Using first choice as fallback.")
+                        suggestions[key] = choices[0]
                 elif dist_type == "uniform":
-                    suggestions[key] = trial.suggest_float(name, float(args[0]), float(args[1]))
+                    try:
+                        suggestions[key] = trial.suggest_float(name, float(args[0]), float(args[1]))
+                    except Exception as e:
+                        print(f"Warning: Optuna float error for {name}: {e}. Using lower bound as fallback.")
+                        suggestions[key] = float(args[0])
                 elif dist_type == "loguniform":
-                    suggestions[key] = trial.suggest_float(name, float(args[0]), float(args[1]), log=True)
+                    try:
+                        suggestions[key] = trial.suggest_float(name, float(args[0]), float(args[1]), log=True)
+                    except Exception as e:
+                        print(f"Warning: Optuna loguniform error for {name}: {e}. Using lower bound as fallback.")
+                        suggestions[key] = float(args[0])
                 elif dist_type == "int":
-                    suggestions[key] = trial.suggest_int(name, int(args[0]), int(args[1]))
+                    try:
+                        suggestions[key] = trial.suggest_int(name, int(args[0]), int(args[1]))
+                    except Exception as e:
+                        print(f"Warning: Optuna int error for {name}: {e}. Using lower bound as fallback.")
+                        suggestions[key] = int(args[0])
                 else:
                     # Unknown distribution type, just pass it through
                     suggestions[key] = value
-            except (ValueError, TypeError) as e:
-                print(f"Warning: Error parsing space for {name}: {e}. Using original value.")
+            except Exception as e:
+                print(f"Critical error in parse_space for {name}: {e}. Using original value.")
                 suggestions[key] = value
         else:
             # If it's a static value, just pass it through

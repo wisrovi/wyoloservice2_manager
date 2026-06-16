@@ -3,7 +3,7 @@ import yaml
 import os
 
 # Absolute import from the package
-from src.celery_config import app
+from app.celery_config import app
 
 def launch_study(yaml_file):
     if yaml_file is None:

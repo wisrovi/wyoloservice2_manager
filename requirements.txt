@@ -4,3 +4,8 @@ optuna>=3.1.0
 PyYAML
 gradio
 psycopg2-binary
+fastapi
+uvicorn
+jinja2
+sqlalchemy
+python-multipart

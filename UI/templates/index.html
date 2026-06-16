@@ -10,19 +10,19 @@
     <style>
         :root {
             --primary: #a855f7;
-            --bg-deep: #030712;
-            --bg-card: rgba(17, 24, 39, 0.6);
+            --bg-deep: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.7);
             --text-main: #f9fafb;
             --text-dim: #9ca3af;
             --border: rgba(255, 255, 255, 0.08);
-            --gradient-linear: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%);
+            --gradient-linear: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-deep); color: var(--text-main); overflow-x: hidden; background-image: radial-gradient(at 100% 0%, hsla(270, 100%, 50%, 0.1) 0, transparent 50%); }
         .container { max-width: 1200px; margin: 0 auto; padding: 0 2rem; }
         .gradient-text { background: var(--gradient-linear); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .hero { height: 100vh; display: flex; align-items: center; justify-content: center; text-align: center; }
-        .hero h1 { font-size: clamp(3rem, 8vw, 6rem); font-weight: 800; margin-bottom: 1.5rem; }
+        .hero { min-height: 100vh; display: flex; align-items: center; justify-content: center; text-align: center; padding: 100px 0; }
+        .hero h1 { font-size: clamp(2.5rem, 8vw, 6rem); font-weight: 800; margin-bottom: 1.5rem; line-height: 1.1; padding-top: 20px; }
         .hero p { font-size: 1.25rem; color: var(--text-dim); max-width: 800px; margin: 0 auto 3rem; }
         .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; padding: 100px 0; }
         .card { background: var(--bg-card); border: 1px solid var(--border); padding: 3rem; border-radius: 24px; transition: all 0.4s; }
@@ -40,6 +40,14 @@
                 Using Optuna and Genetic Algorithms to evolve the best hyperparameters, 
                 dispatching tasks to the Hive, and ensuring only the fittest models survive.
             </p>
+            <div style="display: flex; gap: 1.5rem; justify-content: center; margin-bottom: 4rem;">
+                <a href="/launcher" style="text-decoration: none; padding: 1rem 2.5rem; background: var(--primary); color: white; border-radius: 50px; font-weight: 700; transition: 0.3s; box-shadow: 0 10px 20px rgba(168, 85, 247, 0.3);">
+                    <i class="fas fa-rocket" style="margin-right: 10px;"></i> Launch New Study
+                </a>
+                <a href="/dashboard" style="text-decoration: none; padding: 1rem 2.5rem; background: transparent; color: white; border: 1px solid var(--border); border-radius: 50px; font-weight: 700; transition: 0.3s;">
+                    <i class="fas fa-chart-line" style="margin-right: 10px;"></i> View Dashboard
+                </a>
+            </div>
             <div class="features">
                 <div class="card">
                     <div class="icon"><i class="fas fa-dna"></i></div>
@@ -52,6 +60,16 @@
                     <p>Intelligent routing of training jobs to available GPU workers based on priority and load.</p>
                 </div>
                 <div class="card">
+                    <div class="icon"><i class="fas fa-database"></i></div>
+                    <h3>Optuna Storage</h3>
+                    <p>Full persistence of study histories in PostgreSQL for long-term experiment analysis.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+</body>
+</html>
+      <div class="card">
                     <div class="icon"><i class="fas fa-database"></i></div>
                     <h3>Optuna Storage</h3>
                     <p>Full persistence of study histories in PostgreSQL for long-term experiment analysis.</p>
