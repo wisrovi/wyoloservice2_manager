@@ -1,0 +1,28 @@
+services:
+  manager_study:
+    container_name: wyolo_manager
+    image: wisrovi/train_service:manager_orchestrator_v1.0.0
+    restart: always
+    env_file:
+      - control_host.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  ui:
+    container_name: wyolo_ui
+    image: wisrovi/train_service:manager_ui_v2.0.0
+    restart: always
+    env_file:
+      - control_host.env
+    ports:
+      - "80:80"
+    depends_on:
+      - manager_study
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
