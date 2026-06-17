@@ -8,8 +8,8 @@ services:
     restart: unless-stopped
     env_file:
       - control_host.env
-    volumes:
-      - ./app:/app/app
+    # volumes:
+    #   - ./app:/app/app
     logging:
       driver: "json-file"
       options:
@@ -22,14 +22,14 @@ services:
       context: .
       dockerfile: UI/Dockerfile
     image: wisrovi/train_service:manager_ui_v2.0.0
-    restart: unless-stopped
+    restart: always
     env_file:
       - control_host.env
     ports:
-      - "80:80"
-    volumes:
-      - ./app:/app/app
-      - ./UI:/app/UI
+      - "23444:80"
+    # volumes:
+    #   - ./app:/app/app
+    #   - ./UI:/app/UI
     depends_on:
       - manager_study
 
