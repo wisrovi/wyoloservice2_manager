@@ -1,1 +1,1 @@
-- [ ] Validar sistema de auto-sanacion: Lanzar un estudio y simulate un fallo en el invoker (o devolver accuracy negativo) para verificar que el manager realiza los 3 reintentos antes de desistir.
+- [ ] Validate self-healing system: Launch a study and simulate a failure in the invoker (or return negative accuracy) to verify that the manager performs the 3 retries before giving up.

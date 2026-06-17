@@ -85,12 +85,12 @@ BASE_DEFAULT_CONFIG = {
         "imgsz": 640,
     },
     "sweeper": {
-        "study_name": "exp_deteccion_headless",
+        "study_name": "exp_detection_headless",
         "fitness": "metrics/mAP50-95(B)",
     },
     "metadata": {
         "author": "William Rodríguez - wisrovi",
-        "content": "Experimento lanzado desde orquestador (fallback)",
+        "content": "Experiment launched from orchestrator (fallback)",
     },
 }
 
