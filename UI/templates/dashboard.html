@@ -63,6 +63,7 @@
             <button class="tab-btn" data-tab="workers">Workers</button>
             <button class="tab-btn" data-tab="queues">Queues</button>
             <button class="tab-btn" data-tab="tasks">Active Tasks</button>
+            <button class="tab-btn" data-tab="maintenance" style="color: #fb7185;"><i class="fas fa-tools"></i> Maintenance</button>
         </div>
 
         <div class="tab-content active" id="studies-tab">
@@ -98,6 +99,36 @@
             </div>
             <div id="tasksList" class="tasks-list">
                 <div class="loading">Loading tasks...</div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="maintenance-tab">
+            <div class="section-header">
+                <h2>Cluster Maintenance</h2>
+            </div>
+            <div class="maintenance-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <div class="panel" style="border-top: 4px solid var(--primary);">
+                    <h3>Queue Management</h3>
+                    <p style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 1.5rem;">Clear specific priority queues without affecting others.</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                        <button onclick="maintenancePurge('queue', 'managers')" class="btn" style="background: rgba(168, 85, 247, 0.2); color: var(--primary); border: 1px solid var(--primary);">Purge Managers</button>
+                        <button onclick="maintenancePurge('queue', 'gpus_high')" class="btn" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444;">Purge High</button>
+                        <button onclick="maintenancePurge('queue', 'gpus_medium')" class="btn" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid #f59e0b;">Purge Medium</button>
+                        <button onclick="maintenancePurge('queue', 'gpus_low')" class="btn" style="background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid #3b82f6;">Purge Low</button>
+                    </div>
+                </div>
+
+                <div class="panel" style="border-top: 4px solid #f59e0b;">
+                    <h3>Zombie Cleaning</h3>
+                    <p style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 1.5rem;">Clear only unacknowledged (phantom) tasks. Use when the Manager is hanging.</p>
+                    <button onclick="maintenancePurge('unacked')" class="btn" style="background: #f59e0b; width: 100%;">Clear Phantoms Only</button>
+                </div>
+
+                <div class="panel" style="border-top: 4px solid #ef4444;">
+                    <h3>System Reset</h3>
+                    <p style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 1.5rem;">WARNING: This will wipe EVERYTHING in Redis (all queues and all tasks).</p>
+                    <button onclick="maintenancePurge('all')" class="btn" style="background: #ef4444; width: 100%;">Full Cluster Purge</button>
+                </div>
             </div>
         </div>
     </div>

@@ -255,10 +255,41 @@ async function loadAll() {
     ]);
 }
 
+async function maintenancePurge(type, target = '') {
+    let url = `${API_BASE}/cluster/purge/${type}`;
+    let confirmMsg = '';
+
+    if (type === 'queue') {
+        url = `${API_BASE}/cluster/purge/queue/${target}`;
+        confirmMsg = `Are you sure you want to clear all tasks in the '${target}' queue?`;
+    } else if (type === 'unacked') {
+        confirmMsg = 'This will clear all phantom/unacknowledged tasks. Continue?';
+    } else if (type === 'all') {
+        confirmMsg = 'CRITICAL: This will wipe ALL queues and tasks in the cluster. Are you sure?';
+    }
+
+    if (confirm(confirmMsg)) {
+        try {
+            const response = await fetch(url, { method: 'POST' });
+            const result = await response.json();
+            if (response.ok) {
+                alert(result.message || 'Operation successful');
+                loadAll();
+            } else {
+                alert(`Error: ${result.detail}`);
+            }
+        } catch (e) {
+            alert(`Connection failed: ${e.message}`);
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     loadAll();
 
     document.getElementById('refreshBtn').addEventListener('click', loadAll);
+
+    // Maintenance button logic is now handled via onclick in HTML
 
     const tabs = document.querySelectorAll('.tab-btn');
     tabs.forEach(tab => {

@@ -220,6 +220,44 @@ async def get_active_tasks() -> dict[str, Any]:
         return {"tasks": [], "count": 0, "error": str(e)}
 
 
+@app.post("/api/cluster/purge/queue/{queue_name}")
+async def purge_queue(queue_name: str):
+    """Clear a specific Redis queue."""
+    try:
+        import redis
+        r = redis.Redis.from_url(os.getenv("REDIS_URL", f"redis://{CONTROL_HOST}:23437/0"))
+        r.delete(queue_name)
+        return {"status": "success", "message": f"Queue '{queue_name}' cleared successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/cluster/purge/unacked")
+async def purge_unacked():
+    """Clear only unacknowledged tasks (phantom tasks)."""
+    try:
+        import redis
+        r = redis.Redis.from_url(os.getenv("REDIS_URL", f"redis://{CONTROL_HOST}:23437/0"))
+        # Celery with Redis uses these keys for unacked tasks
+        r.delete("unacked")
+        r.delete("unacked_index")
+        return {"status": "success", "message": "Phantom (unacked) tasks cleared successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/cluster/purge/all")
+async def purge_all():
+    """Full Redis database reset (Extreme)."""
+    try:
+        import redis
+        r = redis.Redis.from_url(os.getenv("REDIS_URL", f"redis://{CONTROL_HOST}:23437/0"))
+        r.flushdb()
+        return {"status": "success", "message": "Full cluster reset completed."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Mount Gradio Launcher
 app = gr.mount_gradio_app(app, launcher_demo, path="/launcher")
 
