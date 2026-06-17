@@ -4,6 +4,7 @@
 
 ## Key Features
 - **High Performance**: Native parallelism and efficient memory management.
+- **Concurrency**: Uses Celery's threads pool with a concurrency of 10 to manage multiple studies in parallel without high memory overhead.
 - **Enterprise Security**: Scanned with Bandit, zero exposed credentials.
 - **Clean Code**: Pylint score > 9.5 across all Python modules.
 - **Resiliency**: Built-in retry mechanisms and state recovery.
