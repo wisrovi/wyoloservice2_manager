@@ -1,19 +1,19 @@
 # WDarwin Ops - Manager Production Deployment
 
-Esta carpeta contiene los archivos necesarios para levantar el **Manager** y su **Cluster Control Center (UI)** en un entorno de producción, aislando el despliegue del código fuente de desarrollo.
+This folder contains the necessary files to deploy the **Manager** and its **Cluster Control Center (UI)** in a production environment, isolating the deployment from the development source code.
 
-## Diferencias con el entorno de Desarrollo
-1. **No hay `--build`**: Usa directamente las imágenes precompiladas de Docker Hub (`wisrovi/train_service`).
-2. **No hay volúmenes de código**: El código ya está inyectado dentro de las imágenes, lo que evita que cambios locales accidentales rompan el entorno productivo.
-3. **Reinicio Constante**: Se usa `restart: always` para asegurar alta disponibilidad ante reinicios del servidor.
+## Differences from Development Environment
+1. **No `--build`**: Uses pre-built images from Docker Hub (`wisrovi/train_service`) directly.
+2. **No code volumes**: The code is already baked into the images, preventing accidental local changes from breaking the production environment.
+3. **Constant Restart**: Uses `restart: always` to ensure high availability in case of server reboots.
 
-## Cómo desplegar
-1. Revisa o modifica el archivo `control_host.env` con las IPs correctas.
-2. Levanta los servicios descargando las imágenes de Docker Hub:
+## How to deploy
+1. Review or modify the `control_host.env` file with the correct IPs.
+2. Spin up the services by downloading the images from Docker Hub:
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-3. Accede al Cluster Control Center en el puerto 80 de este servidor.
+3. Access the Cluster Control Center on port 80 of this server.
