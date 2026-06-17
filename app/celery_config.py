@@ -7,7 +7,7 @@ from celery.result import AsyncResult  # pylint: disable=import-error,unused-imp
 
 # Use redis instead of rabbitmq
 CONTROL_HOST = os.getenv("CONTROL_HOST", "192.168.10.252")
-REDIS_URL = os.getenv("REDIS_URL", f"redis://{CONTROL_HOST}:23437/0")
+REDIS_URL = f"redis://{CONTROL_HOST}:23437/0"
 
 app = Celery(
     "wyolo",
