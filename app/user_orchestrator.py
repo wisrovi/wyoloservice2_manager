@@ -12,6 +12,7 @@ from collections.abc import Callable  # pylint: disable=import-error
 from typing import Any, Optional
 
 import optuna  # pylint: disable=import-error
+from celery import current_task
 from celery.result import AsyncResult  # pylint: disable=import-error
 from optuna.storages import RDBStorage  # pylint: disable=import-error
 from optuna.trial import Trial  # pylint: disable=import-error
@@ -260,6 +261,10 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
     Returns:
         dict[str, Any]: The study results including the best parameters found.
     """
+    try:
+        full_config["study_id"] = current_task.request.id
+    except Exception:
+        full_config["study_id"] = "unknown"
     sweeper_cfg: dict[str, Any] = full_config.get("sweeper", {})
     study_name: str = sweeper_cfg.get("study_name", "default_study")
     direction_val: str = sweeper_cfg.get("direction", "maximize")
