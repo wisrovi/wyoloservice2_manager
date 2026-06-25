@@ -181,6 +181,35 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
     def objective(trial: Trial) -> float:
         import yaml as yaml_log  # type: ignore # pylint: disable=import-error,import-outside-toplevel
 
+        # Helper to publish progress
+        def record_progress(trial_num: int) -> None:
+            try:
+                import redis
+                import json
+                r_client = redis.from_url(celery_app.conf.broker_url)
+                study_id = full_config.get("study_id")
+                completed = trial_num + 1
+                n_trials = int(full_config.get("sweeper", {}).get("n_trials", 10))
+                
+                start_time_bytes = r_client.get(f"study:{study_id}:start_time")
+                if start_time_bytes:
+                    study_start = float(start_time_bytes)
+                    elapsed = time.time() - study_start
+                    avg_duration = elapsed / completed
+                    remaining = n_trials - completed
+                    eta = round(remaining * avg_duration, 1) if remaining > 0 else 0.0
+                else:
+                    eta = 0.0
+                    
+                progress_data = {
+                    "completed_trials": completed,
+                    "total_trials": n_trials,
+                    "eta": eta
+                }
+                r_client.set(f"study:{study_id}:progress", json.dumps(progress_data), ex=86400)
+            except Exception as exc:
+                print(f"Warning: Could not record progress to Redis: {exc}")
+
         # 1. Start with the HARDCODED defaults as ultimate safety net
         trial_config: dict[str, Any] = copy.deepcopy(BASE_DEFAULT_CONFIG)
 
@@ -235,6 +264,7 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
             if isinstance(result, dict) and "accuracy" in result:
                 acc = float(result["accuracy"])
                 if acc >= 0:
+                    record_progress(trial.number)
                     return acc
                 print(f"Warning: Trial {trial.number} returned negative accuracy ({acc}). Possible training error.")
 
@@ -246,6 +276,7 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
 
         print(f"[-] Critical: Trial {trial.number} failed after {max_retries} attempts.")
         # If we reach here, all retries failed. Mark as 0.0 or raise error to let Optuna handle it.
+        record_progress(trial.number)
         return 0.0
 
     return objective
@@ -265,6 +296,19 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         full_config["study_id"] = current_task.request.id
     except Exception:
         full_config["study_id"] = "unknown"
+    
+    study_id = full_config.get("study_id", "unknown")
+    
+    # Save config and start time to Redis for API consumption
+    try:
+        import redis
+        import json
+        r_client = redis.from_url(celery_app.conf.broker_url)
+        r_client.set(f"study:{study_id}:config", json.dumps(full_config), ex=86400)
+        r_client.set(f"study:{study_id}:start_time", str(time.time()), ex=86400)
+    except Exception as exc:
+        print(f"Warning: Could not save study metadata to Redis: {exc}")
+
     sweeper_cfg: dict[str, Any] = full_config.get("sweeper", {})
     study_name: str = sweeper_cfg.get("study_name", "default_study")
     direction_val: str = sweeper_cfg.get("direction", "maximize")
@@ -280,6 +324,16 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         sampler = optuna.samplers.CmaEsSampler()
     else:
         raise ValueError("Invalid sampler")
+
+    # Pruner Configuration
+    pruner_name = sweeper_cfg.get("pruner")
+    pruner = None
+    if pruner_name == "MedianPruner":
+        pruner = optuna.pruners.MedianPruner()
+    elif pruner_name == "PercentilePruner":
+        pruner = optuna.pruners.PercentilePruner(percentile=25.0)
+    elif pruner_name == "HyperbandPruner":
+        pruner = optuna.pruners.HyperbandPruner()
 
     if direction_val == "maximize":
         direction = optuna.study.StudyDirection.MAXIMIZE
@@ -311,12 +365,27 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         direction=direction,
         storage=storage,
         sampler=sampler,
+        pruner=pruner,
         load_if_exists=True,
     )
+    try:
+        study.set_user_attr("config", full_config)
+    except Exception as exc:
+        print(f"Warning: Could not save configuration in Optuna user attributes: {exc}")
+
+    def check_cancel_callback(optuna_study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+        try:
+            import redis
+            r_client = redis.from_url(celery_app.conf.broker_url)
+            if study_id and r_client.get(f"study:{study_id}:cancel"):
+                print(f"[*] Cancellation requested for study {study_id}. Stopping Optuna optimization...")
+                optuna_study.stop()
+        except Exception as exc:
+            print(f"Warning: Could not check cancellation status in Redis: {exc}")
 
     # Run the optimization loop
     try:
-        study.optimize(create_objective(full_config), n_trials=n_trials)
+        study.optimize(create_objective(full_config), n_trials=n_trials, callbacks=[check_cancel_callback])
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"[-] Critical error during Optuna optimization: {e}")
         return {"status": "failed", "error": str(e), "study_name": study_name}
