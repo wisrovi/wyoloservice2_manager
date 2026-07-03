@@ -42,6 +42,17 @@ make start_all || docker-compose up -d
 ```
 
 ---
+
+## 📜 Changelog & Version History
+
+### Version 2.0.0 (Current Release) - 2026-07-03
+*   **Optuna study cancelation listener:** Added capability to poll Redis cancellation keys and safely stop Optuna trial loops using `study.stop()`.
+*   **Decoupled database transactions:** Improved connection pool resilience when writing study trials to PostgreSQL.
+
+### Version 1.0.0 (Initial Release) - 2026-02-10
+*   Optuna manager worker pulling optimization studies from FastAPI REST queue.
+
+---
 ## Author
 **William Steve Rodriguez Villamizar (wisrovi)**
 Principal Systems & Software Architect / Technology Evangelist
