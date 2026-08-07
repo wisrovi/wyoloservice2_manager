@@ -57,3 +57,16 @@ make start_all || docker-compose up -d
 **William Steve Rodriguez Villamizar (wisrovi)**
 Principal Systems & Software Architect / Technology Evangelist
 [LinkedIn Profile](https://es.linkedin.com/in/wisrovi-rodriguez)
+
+## Licensing and Usage
+
+This project uses a **Dual License** model:
+- **Community/Research**: Licensed under the AGPLv3. See [LICENSE](LICENSE).
+- **Commercial**: Requires a commercial license. See [COMMERCIAL.md](COMMERCIAL.md) for details.
+
+### Academic Research
+If you use this project in academic research, you are required to cite this repository using the provided `CITATION.cff` and notify the author with a link to your publication.
+
+
+## Changelog
+- Bumped version due to License update to AGPLv3 and Dual Licensing model.
