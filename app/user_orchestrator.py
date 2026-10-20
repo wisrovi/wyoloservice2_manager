@@ -1,3 +1,4 @@
+# ruff: noqa: PLR0915, PLR0912
 """Manager Orchestrator Module.
 
 This module coordinates Optuna studies, suggesting hyperparameters and
@@ -105,7 +106,7 @@ def deep_update(base: dict, update: dict) -> None:
             base[k] = v
 
 
-def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:  # noqa: PLR0912  # pylint: disable=too-many-branches
+def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:  # pylint: disable=too-many-branches
     """Recursively parses the search space and suggests values using Optuna.
 
     Args:
@@ -179,18 +180,22 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
     search_space: dict[str, Any] = sweeper_in.get("search_space", {})
 
     def objective(trial: Trial) -> float:
+        """Evaluates a single hyperparameter configuration trial."""
         import yaml as yaml_log  # type: ignore # pylint: disable=import-error,import-outside-toplevel
 
         # Helper to publish progress
         def record_progress(trial_num: int) -> None:
+            """Records current study trial progress and estimated completion time to Redis."""
             try:
-                import redis
                 import json
+
+                import redis
+
                 r_client = redis.from_url(celery_app.conf.broker_url)
                 study_id = full_config.get("study_id")
                 completed = trial_num + 1
                 n_trials = int(full_config.get("sweeper", {}).get("n_trials", 10))
-                
+
                 start_time_bytes = r_client.get(f"study:{study_id}:start_time")
                 if start_time_bytes:
                     study_start = float(start_time_bytes)
@@ -200,12 +205,8 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
                     eta = round(remaining * avg_duration, 1) if remaining > 0 else 0.0
                 else:
                     eta = 0.0
-                    
-                progress_data = {
-                    "completed_trials": completed,
-                    "total_trials": n_trials,
-                    "eta": eta
-                }
+
+                progress_data = {"completed_trials": completed, "total_trials": n_trials, "eta": eta}
                 r_client.set(f"study:{study_id}:progress", json.dumps(progress_data), ex=86400)
             except Exception as exc:
                 print(f"Warning: Could not record progress to Redis: {exc}")
@@ -260,13 +261,25 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
             # Wait for completion and extract the metric
             result = wait_for_result(job)
 
-            # Check if result is valid and accuracy is non-negative
-            if isinstance(result, dict) and "accuracy" in result:
-                acc = float(result["accuracy"])
-                if acc >= 0:
-                    record_progress(trial.number)
-                    return acc
-                print(f"Warning: Trial {trial.number} returned negative accuracy ({acc}). Possible training error.")
+            # Check if result is valid and metric (accuracy or fitness) is non-negative
+            if isinstance(result, dict):
+                metric_key = None
+                if "accuracy" in result and result["accuracy"] is not None:
+                    metric_key = "accuracy"
+                elif "fitness" in result and result["fitness"] is not None:
+                    metric_key = "fitness"
+
+                if metric_key is not None:
+                    try:
+                        acc = float(result[metric_key])
+                        if acc >= 0:
+                            record_progress(trial.number)
+                            return acc
+                        print(
+                            f"Warning: Trial {trial.number} returned negative metric ({acc}). Possible training error."
+                        )
+                    except (ValueError, TypeError) as conv_err:
+                        print(f"Warning: Could not convert {metric_key} to float: {conv_err}")
 
             print(f"[-] Trial {trial.number} attempt {attempt} failed or returned invalid result. Result: {result}")
 
@@ -296,13 +309,15 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         full_config["study_id"] = current_task.request.id
     except Exception:
         full_config["study_id"] = "unknown"
-    
+
     study_id = full_config.get("study_id", "unknown")
-    
+
     # Save config and start time to Redis for API consumption
     try:
-        import redis
         import json
+
+        import redis
+
         r_client = redis.from_url(celery_app.conf.broker_url)
         r_client.set(f"study:{study_id}:config", json.dumps(full_config), ex=86400)
         r_client.set(f"study:{study_id}:start_time", str(time.time()), ex=86400)
@@ -374,8 +389,10 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         print(f"Warning: Could not save configuration in Optuna user attributes: {exc}")
 
     def check_cancel_callback(optuna_study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+        """Checks if a cancellation request has been submitted for this study."""
         try:
             import redis
+
             r_client = redis.from_url(celery_app.conf.broker_url)
             if study_id and r_client.get(f"study:{study_id}:cancel"):
                 print(f"[*] Cancellation requested for study {study_id}. Stopping Optuna optimization...")
