@@ -16,8 +16,23 @@
 - **Clean Code**: Pylint score > 9.5 across all Python modules.
 - **Resiliency**: Built-in retry mechanisms and state recovery.
 
-## Technical Stack
-- Python, Celery, Optuna, SQLAlchemy
+## Technical Stack & Key Libraries
+- **Language & Runtime:** Python 3.10
+- **Distributed Task Execution:** Celery (Redis broker & result backend)
+- **Hyperparameter Optimization:** Optuna (TPESampler, RandomSampler, CmaEsSampler, MedianPruner, HyperbandPruner)
+- **Database & Persistence:** PostgreSQL via SQLAlchemy and Optuna RDBStorage (`optuna_db`)
+- **Telemetry & Validation:** Redis, PyYAML, Pydantic, Rich
+
+## Running Tests
+To run the unit tests in a clean and isolated Docker container:
+```bash
+bash run_tests.sh
+```
+
+To calculate code coverage using `pytest-cov` inside Docker:
+```bash
+bash coverage.sh
+```
 
 ## Architecture & Workflow
 
@@ -53,7 +68,7 @@ make start_all || docker-compose up -d
 ## 📜 Changelog & Version History
 
 ### Version 2.0.0 (Current Release) - 2026-07-03
-*   **Optuna study cancelation listener:** Added capability to poll Redis cancellation keys and safely stop Optuna trial loops using `study.stop()`.
+*   **Optuna study cancellation listener:** Added capability to poll Redis cancellation keys and safely stop Optuna trial loops using `study.stop()`.
 *   **Decoupled database transactions:** Improved connection pool resilience when writing study trials to PostgreSQL.
 
 ### Version 1.0.0 (Initial Release) - 2026-02-10
