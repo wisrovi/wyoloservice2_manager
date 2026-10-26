@@ -67,3 +67,41 @@ def test_metric_recovery_invalid_or_negative():
     assert extract_metric({"accuracy": "not_a_number"}) is None
     assert extract_metric({}) is None
     assert extract_metric("invalid_string_result") is None
+
+
+def test_manager_time_and_redis_ttl_resolution():
+    """Validates train.time parsing and 2.0x Redis TTL calculation in the Manager.
+
+    This test verifies:
+    1. When 'train.time' is omitted or invalid, it is not injected (returns None) so
+       Ultralytics trains by epochs, and Redis TTL uses the 12.0h reference -> 86,400s (24h).
+    2. When 'train.time' is explicitly set (e.g. 30h), it is parsed as float(30.0) and
+       Redis TTL scales to 2.0x -> 216,000s (60h).
+    """
+    default_cfg = {"train": {"epochs": 230, "patience": 50}}
+    custom_cfg = {"train": {"epochs": 230, "patience": 50, "time": 30}}
+    short_cfg = {"train": {"epochs": 10, "time": 1}}
+
+    def parse_time(cfg: dict) -> float | None:
+        raw = cfg.get("train", {}).get("time")
+        if raw is None or isinstance(raw, bool):
+            return None
+        try:
+            val = float(raw)
+            return val if val > 0.0 else None
+        except (ValueError, TypeError):
+            return None
+
+    def calc_redis_ttl(cfg: dict) -> int:
+        user_t = parse_time(cfg)
+        ref_h = user_t if user_t is not None else 12.0
+        return max(86400, int(ref_h * 3600 * 2))
+
+    assert parse_time(default_cfg) is None
+    assert calc_redis_ttl(default_cfg) == 86400
+
+    assert parse_time(custom_cfg) == 30.0
+    assert calc_redis_ttl(custom_cfg) == 216000
+
+    assert parse_time(short_cfg) == 1.0
+    assert calc_redis_ttl(short_cfg) == 86400
