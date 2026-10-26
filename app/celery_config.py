@@ -23,7 +23,8 @@ app.conf.update(
     enable_utc=True,
     task_track_started=True,
     worker_prefetch_multiplier=1,
+    result_expires=604800,  # 7 days (168 hours) to support extended multi-day training studies
     broker_transport_options={
-        "visibility_timeout": 86400,  # 24 hours to prevent task redelivery on Redis during training
+        "visibility_timeout": 604800,  # 7 days (168 hours) to prevent task redelivery on Redis during training
     },
 )
