@@ -77,6 +77,9 @@ def wait_for_result(job: AsyncResult) -> Any:
 
 
 # --- Global Defaults ---
+DEFAULT_REFERENCE_TIME_HOURS: float = 12.0
+DEFAULT_REDIS_TTL_SECONDS: int = 86400
+
 BASE_DEFAULT_CONFIG = {
     "model": "yolov8n.pt",
     "type": "yolo",
@@ -95,6 +98,34 @@ BASE_DEFAULT_CONFIG = {
         "content": "Experiment launched from orchestrator (fallback)",
     },
 }
+
+
+def parse_user_train_time_hours(config: dict[str, Any] | None) -> float | None:
+    """Extract a valid user-defined training time limit (in hours) from config.
+
+    Returns None when `train.time` is omitted, None, boolean, non-numeric, or <= 0,
+    preserving Ultralytics' default epoch-based training behavior.
+    """
+    if not isinstance(config, dict):
+        return None
+    train_section = config.get("train")
+    if not isinstance(train_section, dict):
+        return None
+    raw_time = train_section.get("time")
+    if raw_time is None or isinstance(raw_time, bool):
+        return None
+    try:
+        parsed = float(raw_time)
+        return parsed if parsed > 0.0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def resolve_redis_ttl_seconds(config: dict[str, Any] | None) -> int:
+    """Calculate the Redis TTL in seconds (2.0x reference hours, minimum 24h)."""
+    user_time = parse_user_train_time_hours(config)
+    ref_hours = user_time if user_time is not None else DEFAULT_REFERENCE_TIME_HOURS
+    return max(DEFAULT_REDIS_TTL_SECONDS, int(ref_hours * 3600 * 2))
 
 
 def deep_update(base: dict, update: dict) -> None:
@@ -207,7 +238,8 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
                     eta = 0.0
 
                 progress_data = {"completed_trials": completed, "total_trials": n_trials, "eta": eta}
-                r_client.set(f"study:{study_id}:progress", json.dumps(progress_data), ex=86400)
+                redis_ttl = resolve_redis_ttl_seconds(full_config)
+                r_client.set(f"study:{study_id}:progress", json.dumps(progress_data), ex=redis_ttl)
             except Exception as exc:
                 print(f"Warning: Could not record progress to Redis: {exc}")
 
@@ -221,6 +253,13 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
         overrides: dict[str, Any] = parse_space(trial, search_space)
         print(f"Trial {trial.number}: Suggested overrides from Optuna: {overrides}")
         deep_update(trial_config, overrides)
+
+        # 3.5 Normalize optional train.time: only keep it when explicitly > 0
+        user_time_hours = parse_user_train_time_hours(trial_config)
+        if user_time_hours is not None:
+            trial_config.setdefault("train", {})["time"] = user_time_hours
+        elif isinstance(trial_config.get("train"), dict):
+            trial_config["train"].pop("time", None)
 
         # 4. Final Cleanup & Mandatory Fields (The "Contract" with Invoker)
         # Ensure user_id exists
@@ -319,8 +358,9 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         import redis
 
         r_client = redis.from_url(celery_app.conf.broker_url)
-        r_client.set(f"study:{study_id}:config", json.dumps(full_config), ex=86400)
-        r_client.set(f"study:{study_id}:start_time", str(time.time()), ex=86400)
+        redis_ttl = resolve_redis_ttl_seconds(full_config)
+        r_client.set(f"study:{study_id}:config", json.dumps(full_config), ex=redis_ttl)
+        r_client.set(f"study:{study_id}:start_time", str(time.time()), ex=redis_ttl)
     except Exception as exc:
         print(f"Warning: Could not save study metadata to Redis: {exc}")
 
