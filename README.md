@@ -15,7 +15,7 @@
 - **Enterprise Security**: Scanned with Bandit, zero exposed credentials.
 - **Clean Code**: Pylint score > 9.5 across all Python modules.
 - **Resiliency**: Built-in retry mechanisms and state recovery.
-- **Reliability for Long Training**: Configured with extended Redis visibility timeout (24h) to protect long-running GPU training sessions from inadvertent duplicate task redelivery.
+- **Reliability for Long Training & Dynamic Timeouts**: Configured with a 7-day (`604,800s`) Celery Redis visibility timeout and dynamic `2.0x` Redis study metadata TTLs (`resolve_redis_ttl_seconds`) scaled from optional `train.time` (in hours, defaulting to a `12.0h` base -> `24h` TTL while preserving epoch-based training when `train.time` is omitted).
 
 ## Technical Stack & Key Libraries
 - **Language & Runtime:** Python 3.10
