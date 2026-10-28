@@ -21,6 +21,8 @@ from optuna.trial import Trial  # pylint: disable=import-error
 # Import the Celery app configuration
 from .celery_config import app as celery_app
 
+VERSION: str = "v1.2.1"
+
 
 def check_queue_active(app_instance: Any, queue_name: str) -> bool:
     """Checks if there is at least one active worker listening to the specified queue.
@@ -203,10 +205,22 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
     """
     # Pre-calculate worker queue based on input config (independent of Optuna trials)
     sweeper_in = full_config.get("sweeper", {})
+    if not isinstance(sweeper_in, dict):
+        sweeper_in = {}
     priority = sweeper_in.get("priority", "low")
-    debug_val = sweeper_in.get("debug", False)
+    target_queue = (
+        sweeper_in.get("debug")
+        or full_config.get("debug")
+        or sweeper_in.get("target_worker_queue")
+        or full_config.get("target_worker_queue")
+    )
 
-    worker_queue = (debug_val if isinstance(debug_val, str) else "gpus_debug") if debug_val else f"gpus_{priority}"
+    if target_queue and not isinstance(target_queue, bool):
+        worker_queue = str(target_queue)
+    elif target_queue is True:
+        worker_queue = "gpus_debug"
+    else:
+        worker_queue = f"gpus_{priority}"
 
     search_space: dict[str, Any] = sweeper_in.get("search_space", {})
 
