@@ -20,7 +20,7 @@ from UI.launcher import demo as launcher_demo
 app = FastAPI(
     title="Wyolo Manager UI",
     description="Unified interface for WDarwin Ops Brain",
-    version="2.0.0",
+    version="2.0.1",
 )
 
 # Configuration and Paths
