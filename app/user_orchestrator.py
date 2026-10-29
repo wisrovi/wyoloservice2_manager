@@ -238,8 +238,9 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
 
                 r_client = redis.from_url(celery_app.conf.broker_url)
                 study_id = full_config.get("study_id")
-                completed = trial_num + 1
                 n_trials = int(full_config.get("sweeper", {}).get("n_trials", 10))
+                # Ensure completed count does not exceed total trials configured for this study session
+                completed = min(trial_num + 1, n_trials)
 
                 start_time_bytes = r_client.get(f"study:{study_id}:start_time")
                 if start_time_bytes:
