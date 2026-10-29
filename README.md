@@ -102,5 +102,6 @@ If you use this project in academic research, you are required to cite this repo
 
 
 ## Changelog
+- **v2.0.1**: Fixed trial counter overflow in Optuna sweeper progress recording by capping completed trials to configured maximum `n_trials`.
 - **v1.2.1**: Enhanced worker queue resolution supporting root-level and sweeper-level `debug` and `target_worker_queue` for guaranteed private node execution.
 - Bumped version due to License update to PolyForm Noncommercial and Dual Licensing model.
