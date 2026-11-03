@@ -21,7 +21,7 @@ from optuna.trial import Trial  # pylint: disable=import-error
 # Import the Celery app configuration
 from .celery_config import app as celery_app
 
-VERSION: str = "v1.2.1"
+VERSION: str = "v1.2.2"
 
 
 def check_queue_active(app_instance: Any, queue_name: str) -> bool:
@@ -82,9 +82,19 @@ def wait_for_result(job: AsyncResult) -> Any:
 DEFAULT_REFERENCE_TIME_HOURS: float = 12.0
 DEFAULT_REDIS_TTL_SECONDS: int = 86400
 
-BASE_DEFAULT_CONFIG = {
+TASK_FITNESS_MAP: dict[str, str] = {
+    "detect": "metrics/mAP50-95(B)",
+    "segment": "metrics/mAP50-95(M)",
+    "classify": "metrics/accuracy_top1",
+    "pose": "metrics/mAP50-95(P)",
+    "obb": "metrics/mAP50-95(B)",
+}
+
+BASE_DEFAULT_CONFIG: dict[str, Any] = {
     "model": "yolov8n.pt",
     "type": "yolo",
+    "style": "detect",
+    "task": "detect",
     "train": {
         "batch": -1,
         "data": "/datasets/classification/colorball.v8i.multiclass/",
@@ -93,13 +103,103 @@ BASE_DEFAULT_CONFIG = {
     },
     "sweeper": {
         "study_name": "exp_detection_headless",
+        "algorithm": "optuna",
+        "direction": "maximize",
+        "sampler": "TPESampler",
         "fitness": "metrics/mAP50-95(B)",
+        "tune": False,
+        "priority": "medium",
+    },
+    "extras": {
+        "gpu": {
+            "id": 0,
+            "limit": 0.60,
+        },
     },
     "metadata": {
         "author": "William Rodríguez - wisrovi",
         "content": "Experiment launched from orchestrator (fallback)",
     },
 }
+
+
+def resolve_style(config: dict[str, Any]) -> str:
+    """Resolve vision task style ('detect', 'segment', 'classify', 'pose', 'obb')."""
+    explicit = config.get("style") or config.get("task")
+    if explicit and isinstance(explicit, str):
+        cleaned = explicit.strip().lower()
+        if cleaned in TASK_FITNESS_MAP:
+            return cleaned
+
+    model_str = str(config.get("model", "")).lower()
+    if "-seg" in model_str or "segment" in model_str:
+        return "segment"
+    if "-cls" in model_str or "classify" in model_str or "classification" in model_str:
+        return "classify"
+    if "-pose" in model_str:
+        return "pose"
+    if "-obb" in model_str:
+        return "obb"
+    return "detect"
+
+
+def resolve_study_configuration(full_config: dict[str, Any]) -> dict[str, Any]:
+    """Enriches and normalizes user training configuration with sensible smart defaults.
+
+    Infers vision task style ('detect', 'segment', etc.), maps the appropriate Optuna
+    fitness objective metric, ensures default sweeper settings (TPE sampler, maximize direction),
+    and sets fallback hardware/study identifiers if omitted.
+    """
+    # 1. Vision task style resolution
+    style = resolve_style(full_config)
+    full_config["style"] = style
+    full_config["task"] = style
+
+    if "type" not in full_config:
+        full_config["type"] = "yolo"
+
+    # 2. Ensure sweeper block exists
+    sweeper_cfg = full_config.setdefault("sweeper", {})
+    if not isinstance(sweeper_cfg, dict):
+        sweeper_cfg = {}
+        full_config["sweeper"] = sweeper_cfg
+
+    # 3. Fitness resolution
+    if not sweeper_cfg.get("fitness"):
+        sweeper_cfg["fitness"] = TASK_FITNESS_MAP.get(style, "metrics/mAP50-95(B)")
+
+    # 4. Study name resolution
+    if not sweeper_cfg.get("study_name"):
+        sweeper_cfg["study_name"] = f"study_{style}_{int(time.time())}"
+
+    # 5. Direction, Sampler, Algorithm defaults
+    if not sweeper_cfg.get("direction"):
+        sweeper_cfg["direction"] = "maximize"
+    if not sweeper_cfg.get("sampler"):
+        sweeper_cfg["sampler"] = "TPESampler"
+    if not sweeper_cfg.get("algorithm"):
+        sweeper_cfg["algorithm"] = "optuna"
+
+    # 6. Trials count resolution: default 1 if tune=False / no search space, else 10
+    search_space = sweeper_cfg.get("search_space", {})
+    is_tuning = bool(sweeper_cfg.get("tune", False)) or (isinstance(search_space, dict) and bool(search_space))
+    if "n_trials" not in sweeper_cfg:
+        sweeper_cfg["n_trials"] = 10 if is_tuning else 1
+
+    # 7. Hardware extras default
+    extras = full_config.setdefault("extras", {})
+    if isinstance(extras, dict):
+        gpu_extras = extras.setdefault("gpu", {})
+        if isinstance(gpu_extras, dict):
+            gpu_extras.setdefault("id", 0)
+            gpu_extras.setdefault("limit", 0.60)
+
+    # 8. Train defaults: autobatch (-1) if omitted
+    train_cfg = full_config.setdefault("train", {})
+    if isinstance(train_cfg, dict) and "batch" not in train_cfg:
+        train_cfg["batch"] = -1
+
+    return full_config
 
 
 def parse_user_train_time_hours(config: dict[str, Any] | None) -> float | None:
@@ -282,9 +382,10 @@ def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
             trial_config["user_id"] = trial_config.get("metadata", {}).get("author", "wisrovi")
 
         # Simplify sweeper for the Invoker (Invoker only needs these 2)
+        default_fit = TASK_FITNESS_MAP.get(trial_config.get("style", "detect"), "metrics/mAP50-95(B)")
         trial_config["sweeper"] = {
             "study_name": sweeper_in.get("study_name", "optuna_study"),
-            "fitness": sweeper_in.get("fitness", "metrics/accuracy_top1"),
+            "fitness": sweeper_in.get("fitness", default_fit),
         }
 
         # Log the exact payload for debugging
@@ -365,6 +466,9 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         full_config["study_id"] = "unknown"
 
     study_id = full_config.get("study_id", "unknown")
+
+    # Resolve all defaults, vision style, and fitness mapping
+    resolve_study_configuration(full_config)
 
     # Save config and start time to Redis for API consumption
     try:
