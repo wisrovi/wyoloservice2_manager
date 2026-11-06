@@ -36,17 +36,26 @@ for mod in [
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
 
-# Add parent directory to sys.path to import user_orchestrator
+# Add directories to sys.path
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
-if PARENT_DIR not in sys.path:
-    sys.path.insert(0, PARENT_DIR)
+ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+for d in [ROOT_DIR, PARENT_DIR]:
+    if d not in sys.path:
+        sys.path.insert(0, d)
 
-from app.user_orchestrator import (
-    TASK_FITNESS_MAP,
-    resolve_style,
-    resolve_study_configuration,
-)
+try:
+    from app.user_orchestrator import (
+        TASK_FITNESS_MAP,
+        resolve_style,
+        resolve_study_configuration,
+    )
+except ModuleNotFoundError:
+    from user_orchestrator import (
+        TASK_FITNESS_MAP,
+        resolve_style,
+        resolve_study_configuration,
+    )
 
 
 def test_resolve_style_explicit_style_key():
