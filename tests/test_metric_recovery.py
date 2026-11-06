@@ -69,6 +69,25 @@ def test_metric_recovery_invalid_or_negative():
     assert extract_metric("invalid_string_result") is None
 
 
+def parse_time(cfg: dict) -> float | None:
+    """Parse time helper at module scope."""
+    raw = cfg.get("train", {}).get("time")
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        val = float(raw)
+        return val if val > 0.0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def calc_redis_ttl(cfg: dict) -> int:
+    """Calculate Redis TTL helper at module scope."""
+    user_t = parse_time(cfg)
+    ref_h = user_t if user_t is not None else 12.0
+    return max(86400, int(ref_h * 3600 * 2))
+
+
 def test_manager_time_and_redis_ttl_resolution():
     """Validates train.time parsing and 2.0x Redis TTL calculation in the Manager.
 
@@ -81,21 +100,6 @@ def test_manager_time_and_redis_ttl_resolution():
     default_cfg = {"train": {"epochs": 230, "patience": 50}}
     custom_cfg = {"train": {"epochs": 230, "patience": 50, "time": 30}}
     short_cfg = {"train": {"epochs": 10, "time": 1}}
-
-    def parse_time(cfg: dict) -> float | None:
-        raw = cfg.get("train", {}).get("time")
-        if raw is None or isinstance(raw, bool):
-            return None
-        try:
-            val = float(raw)
-            return val if val > 0.0 else None
-        except (ValueError, TypeError):
-            return None
-
-    def calc_redis_ttl(cfg: dict) -> int:
-        user_t = parse_time(cfg)
-        ref_h = user_t if user_t is not None else 12.0
-        return max(86400, int(ref_h * 3600 * 2))
 
     assert parse_time(default_cfg) is None
     assert calc_redis_ttl(default_cfg) == 86400
