@@ -18,4 +18,3 @@ ENV PYTHONPATH="/app:${PYTHONPATH}"
 
 # Start Celery worker
 CMD ["celery", "-A", "app.user_orchestrator", "worker", "-Q", "managers", "--concurrency=10", "-P", "threads", "--loglevel=info"]
-
