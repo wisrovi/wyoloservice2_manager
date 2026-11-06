@@ -102,6 +102,7 @@ If you use this project in academic research, you are required to cite this repo
 
 
 ## Changelog
+- **v2.2.0**: Migrated manager service to standard WPipe microservice architecture with declarative `pipelines.py`, typed `dto/` packages, and modularized SRP utilities in `app/utils/` (`config_resolver.py`, `search_space_parser.py`, `queue_checker.py`, `study_callbacks.py`, `trial_objective.py`). Pinned all dependencies in `requirements.txt` and co-located unit test suite in `app/tests/`.
 - **v2.1.0**: Added smart defaults resolution engine (`resolve_study_configuration` and `resolve_style`) in `user_orchestrator.py` mapping vision task styles to Optuna fitness metrics, and auto-resolving minimal YAML training configs.
 - **v2.0.1**: Fixed trial counter overflow in Optuna sweeper progress recording by capping completed trials to configured maximum `n_trials`.
 - **v1.2.1**: Enhanced worker queue resolution supporting root-level and sweeper-level `debug` and `target_worker_queue` for guaranteed private node execution.
