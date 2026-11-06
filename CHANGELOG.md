@@ -1,5 +1,16 @@
 # Changelog - Orchestrator Manager
 
+## [2.2.0] - 2026-11-06
+### Added
+- **WPipe Architecture & Quality Compliance:** Fully migrated manager service to standard WPipe microservice architecture:
+  - Created declarative `app/pipelines.py` with `manager_study_pipeline` and `manage_study_step`.
+  - Created typed Data Transfer Objects under `app/dto/` (`study_dto.py`).
+  - Created standard service entrypoint `app/main.py`.
+  - Modularized `user_orchestrator.py` into dedicated Single Responsibility Principle modules under `app/utils/` (`config_resolver.py`, `search_space_parser.py`, `queue_checker.py`, `study_callbacks.py`, `trial_objective.py`).
+  - Extracted nested function closures (`objective`, `record_progress`, `check_cancel_callback`) into clean callable classes.
+  - Strictly pinned external dependencies in `requirements.txt` (Rule 15).
+  - Co-located unit test suite in `app/tests/` (Rule 16) and verified 100% dockerized test pass rate.
+
 ## [2.1.0] - 2026-11-03
 ### Added
 - Implemented smart defaults engine in `user_orchestrator.py` (`resolve_study_configuration` and `resolve_style`), automatically resolving vision task styles (`detect`, `segment`, `classify`, `pose`, `obb`) and mapping them to their corresponding Optuna fitness objective metrics (`mAP50-95(B)`, `mAP50-95(M)`, `accuracy_top1`, `mAP50-95(P)`).
