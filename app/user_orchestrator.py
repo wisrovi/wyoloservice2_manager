@@ -1,464 +1,77 @@
-# ruff: noqa: PLR0915, PLR0912
 """Manager Orchestrator Module.
 
-This module coordinates Optuna studies, suggesting hyperparameters and
-dispatching training trials to workers through Celery. It ensures sequential
-execution and supports dynamic search spaces.
+Coordinates Optuna studies, suggesting hyperparameters and dispatching training trials
+to workers through Celery. Ensures sequential execution and supports dynamic search spaces.
 """
 
-import copy
 import os
 import time
-from collections.abc import Callable  # pylint: disable=import-error
-from typing import Any, Optional
-
-import optuna  # pylint: disable=import-error
+from typing import Any, Dict
 from celery import current_task
-from celery.result import AsyncResult  # pylint: disable=import-error
-from optuna.storages import RDBStorage  # pylint: disable=import-error
-from optuna.trial import Trial  # pylint: disable=import-error
+import optuna
+from optuna.storages import RDBStorage
 
-# Import the Celery app configuration
 from .celery_config import app as celery_app
+from .utils.config_resolver import (
+    BASE_DEFAULT_CONFIG,
+    DEFAULT_REDIS_TTL_SECONDS,
+    DEFAULT_REFERENCE_TIME_HOURS,
+    TASK_FITNESS_MAP,
+    deep_update,
+    parse_user_train_time_hours,
+    resolve_redis_ttl_seconds,
+    resolve_study_configuration,
+    resolve_style,
+)
+from .utils.queue_checker import check_queue_active, wait_for_result
+from .utils.search_space_parser import parse_space
+from .utils.study_callbacks import StudyCancelCallback, StudyProgressRecorder
+from .utils.trial_objective import OptunaTrialObjective
 
-VERSION: str = "v1.2.2"
+VERSION: str = "v1.2.3"
 
 
-def check_queue_active(app_instance: Any, queue_name: str) -> bool:
-    """Checks if there is at least one active worker listening to the specified queue.
+def create_objective(full_config: Dict[str, Any]) -> OptunaTrialObjective:
+    """Instantiate Optuna trial objective callable for study execution.
 
     Args:
-        app_instance: The Celery app instance.
-        queue_name (str): Name of the queue to check.
+        full_config (Dict[str, Any]): Complete study configuration.
 
     Returns:
-        bool: True if the queue is active, False otherwise.
+        OptunaTrialObjective: Callable objective object for trial evaluations.
     """
-    try:
-        inspector = app_instance.control.inspect()
-        # This can be slow as it queries all workers via broadcast
-        queues_data = inspector.active_queues()
-        if not queues_data:
-            return False
-
-        for worker_queues in queues_data.values():
-            for q in worker_queues:
-                if q.get("name") == queue_name:
-                    return True
-        return False
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"Warning: Could not inspect queues: {e}")
-        # If we can't inspect, we assume it might exist to avoid blocking
-        return True
+    return OptunaTrialObjective(celery_app=celery_app, full_config=full_config)
 
 
-def wait_for_result(job: AsyncResult) -> Any:
-    """Blocks until the Celery task is ready and returns the result safely.
-
-    Avoids using job.get() to bypass Celery's safety check for synchronous subtasks.
-
-    Args:
-        job (AsyncResult): The Celery task to wait for.
+def _init_optuna_storage() -> RDBStorage:
+    """Connect to PostgreSQL or fall back to local SQLite Optuna storage.
 
     Returns:
-        Any: The result of the Celery task or None if it failed.
+        RDBStorage: Initialized relational database storage backend.
     """
+    base_url = "postgresql://postgres:postgres@<IP>:23436/optuna_db"  # pragma: allowlist secret
+    control_host = os.getenv("CONTROL_HOST", "192.168.10.252")
+    storage_url = base_url.replace("<IP>", control_host)
     try:
-        # Manually poll for completion to avoid "Never call result.get() within a task"
-        while not job.ready():
-            time.sleep(1)
-
-        if job.successful():
-            return job.result
-        # result attribute on AsyncResult contains the exception in case of FAILURE
-        print(f"Task {job.id} failed with state: {job.state}. Error: {job.result}")
-        return None
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"Error waiting for task {job.id}: {str(e)}")
-        return None
-
-
-# --- Global Defaults ---
-DEFAULT_REFERENCE_TIME_HOURS: float = 12.0
-DEFAULT_REDIS_TTL_SECONDS: int = 86400
-
-TASK_FITNESS_MAP: dict[str, str] = {
-    "detect": "metrics/mAP50-95(B)",
-    "segment": "metrics/mAP50-95(M)",
-    "classify": "metrics/accuracy_top1",
-    "pose": "metrics/mAP50-95(P)",
-    "obb": "metrics/mAP50-95(B)",
-}
-
-BASE_DEFAULT_CONFIG: dict[str, Any] = {
-    "model": "yolov8n.pt",
-    "type": "yolo",
-    "style": "detect",
-    "task": "detect",
-    "train": {
-        "batch": -1,
-        "data": "/datasets/classification/colorball.v8i.multiclass/",
-        "epochs": 2,
-        "imgsz": 640,
-    },
-    "sweeper": {
-        "study_name": "exp_detection_headless",
-        "algorithm": "optuna",
-        "direction": "maximize",
-        "sampler": "TPESampler",
-        "fitness": "metrics/mAP50-95(B)",
-        "tune": False,
-        "priority": "medium",
-    },
-    "extras": {
-        "gpu": {
-            "id": 0,
-            "limit": 0.60,
-        },
-    },
-    "metadata": {
-        "author": "William Rodríguez - wisrovi",
-        "content": "Experiment launched from orchestrator (fallback)",
-    },
-}
-
-
-def resolve_style(config: dict[str, Any]) -> str:
-    """Resolve vision task style ('detect', 'segment', 'classify', 'pose', 'obb')."""
-    explicit = config.get("style") or config.get("task")
-    if explicit and isinstance(explicit, str):
-        cleaned = explicit.strip().lower()
-        if cleaned in TASK_FITNESS_MAP:
-            return cleaned
-
-    model_str = str(config.get("model", "")).lower()
-    if "-seg" in model_str or "segment" in model_str:
-        return "segment"
-    if "-cls" in model_str or "classify" in model_str or "classification" in model_str:
-        return "classify"
-    if "-pose" in model_str:
-        return "pose"
-    if "-obb" in model_str:
-        return "obb"
-    return "detect"
-
-
-def resolve_study_configuration(full_config: dict[str, Any]) -> dict[str, Any]:
-    """Enriches and normalizes user training configuration with sensible smart defaults.
-
-    Infers vision task style ('detect', 'segment', etc.), maps the appropriate Optuna
-    fitness objective metric, ensures default sweeper settings (TPE sampler, maximize direction),
-    and sets fallback hardware/study identifiers if omitted.
-    """
-    # 1. Vision task style resolution
-    style = resolve_style(full_config)
-    full_config["style"] = style
-    full_config["task"] = style
-
-    if "type" not in full_config:
-        full_config["type"] = "yolo"
-
-    # 2. Ensure sweeper block exists
-    sweeper_cfg = full_config.setdefault("sweeper", {})
-    if not isinstance(sweeper_cfg, dict):
-        sweeper_cfg = {}
-        full_config["sweeper"] = sweeper_cfg
-
-    # 3. Fitness resolution
-    if not sweeper_cfg.get("fitness"):
-        sweeper_cfg["fitness"] = TASK_FITNESS_MAP.get(style, "metrics/mAP50-95(B)")
-
-    # 4. Study name resolution
-    if not sweeper_cfg.get("study_name"):
-        sweeper_cfg["study_name"] = f"study_{style}_{int(time.time())}"
-
-    # 5. Direction, Sampler, Algorithm defaults
-    if not sweeper_cfg.get("direction"):
-        sweeper_cfg["direction"] = "maximize"
-    if not sweeper_cfg.get("sampler"):
-        sweeper_cfg["sampler"] = "TPESampler"
-    if not sweeper_cfg.get("algorithm"):
-        sweeper_cfg["algorithm"] = "optuna"
-
-    # 6. Trials count resolution: default 1 if tune=False / no search space, else 10
-    search_space = sweeper_cfg.get("search_space", {})
-    is_tuning = bool(sweeper_cfg.get("tune", False)) or (isinstance(search_space, dict) and bool(search_space))
-    if "n_trials" not in sweeper_cfg:
-        sweeper_cfg["n_trials"] = 10 if is_tuning else 1
-
-    # 7. Hardware extras default
-    extras = full_config.setdefault("extras", {})
-    if isinstance(extras, dict):
-        gpu_extras = extras.setdefault("gpu", {})
-        if isinstance(gpu_extras, dict):
-            gpu_extras.setdefault("id", 0)
-            gpu_extras.setdefault("limit", 0.60)
-
-    # 8. Train defaults: autobatch (-1) if omitted
-    train_cfg = full_config.setdefault("train", {})
-    if isinstance(train_cfg, dict) and "batch" not in train_cfg:
-        train_cfg["batch"] = -1
-
-    return full_config
-
-
-def parse_user_train_time_hours(config: dict[str, Any] | None) -> float | None:
-    """Extract a valid user-defined training time limit (in hours) from config.
-
-    Returns None when `train.time` is omitted, None, boolean, non-numeric, or <= 0,
-    preserving Ultralytics' default epoch-based training behavior.
-    """
-    if not isinstance(config, dict):
-        return None
-    train_section = config.get("train")
-    if not isinstance(train_section, dict):
-        return None
-    raw_time = train_section.get("time")
-    if raw_time is None or isinstance(raw_time, bool):
-        return None
-    try:
-        parsed = float(raw_time)
-        return parsed if parsed > 0.0 else None
-    except (ValueError, TypeError):
-        return None
-
-
-def resolve_redis_ttl_seconds(config: dict[str, Any] | None) -> int:
-    """Calculate the Redis TTL in seconds (2.0x reference hours, minimum 24h)."""
-    user_time = parse_user_train_time_hours(config)
-    ref_hours = user_time if user_time is not None else DEFAULT_REFERENCE_TIME_HOURS
-    return max(DEFAULT_REDIS_TTL_SECONDS, int(ref_hours * 3600 * 2))
-
-
-def deep_update(base: dict, update: dict) -> None:
-    """Recursively updates a dictionary."""
-    for k, v in update.items():
-        if isinstance(v, dict) and k in base and isinstance(base[k], dict):
-            deep_update(base[k], v)
-        else:
-            base[k] = v
-
-
-def parse_space(trial: Trial, space: dict, prefix: str = "") -> dict:  # pylint: disable=too-many-branches
-    """Recursively parses the search space and suggests values using Optuna.
-
-    Args:
-        trial (Trial): The Optuna trial object.
-        space (dict): The search space configuration.
-        prefix (str): Prefix for the parameter names.
-
-    Returns:
-        dict: A dictionary of suggested values.
-    """
-    suggestions: dict[str, Any] = {}
-    for key, value in space.items():
-        name = f"{prefix}{key}"
-        if isinstance(value, dict):
-            suggestions[key] = parse_space(trial, value, f"{name}.")
-        elif isinstance(value, (list, tuple)) and len(value) >= 2:
-            dist_type = value[0]
-            args = value[1:]
-            try:
-                if dist_type == "choice":
-                    # Handle both ["choice", ["a", "b"]] and ["choice", "a", "b"]
-                    choices = args[0] if isinstance(args[0], list) else list(args)
-                    try:
-                        suggestions[key] = trial.suggest_categorical(name, choices)
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        print(f"Warning: Optuna categorical error for {name}: {e}. Using first choice as fallback.")
-                        suggestions[key] = choices[0]
-                elif dist_type == "uniform":
-                    try:
-                        suggestions[key] = trial.suggest_float(name, float(args[0]), float(args[1]))
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        print(f"Warning: Optuna float error for {name}: {e}. Using lower bound as fallback.")
-                        suggestions[key] = float(args[0])
-                elif dist_type == "loguniform":
-                    try:
-                        suggestions[key] = trial.suggest_float(name, float(args[0]), float(args[1]), log=True)
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        print(f"Warning: Optuna loguniform error for {name}: {e}. Using lower bound as fallback.")
-                        suggestions[key] = float(args[0])
-                elif dist_type == "int":
-                    try:
-                        suggestions[key] = trial.suggest_int(name, int(args[0]), int(args[1]))
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        print(f"Warning: Optuna int error for {name}: {e}. Using lower bound as fallback.")
-                        suggestions[key] = int(args[0])
-                else:
-                    # Unknown distribution type, just pass it through
-                    suggestions[key] = value
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"Critical error in parse_space for {name}: {e}. Using original value.")
-                suggestions[key] = value
-        else:
-            # If it's a static value, just pass it through
-            suggestions[key] = value
-    return suggestions
-
-
-def create_objective(full_config: dict[str, Any]) -> Callable[[Trial], float]:
-    """Creates a closure for the Optuna objective function.
-
-    Args:
-        full_config (dict[str, Any]): The full YAML configuration for the study.
-    """
-    # Pre-calculate worker queue based on input config (independent of Optuna trials)
-    sweeper_in = full_config.get("sweeper", {})
-    if not isinstance(sweeper_in, dict):
-        sweeper_in = {}
-    priority = sweeper_in.get("priority", "low")
-    target_queue = (
-        sweeper_in.get("debug")
-        or full_config.get("debug")
-        or sweeper_in.get("target_worker_queue")
-        or full_config.get("target_worker_queue")
-    )
-
-    if target_queue and not isinstance(target_queue, bool):
-        worker_queue = str(target_queue)
-    elif target_queue is True:
-        worker_queue = "gpus_debug"
-    else:
-        worker_queue = f"gpus_{priority}"
-
-    search_space: dict[str, Any] = sweeper_in.get("search_space", {})
-
-    def objective(trial: Trial) -> float:
-        """Evaluates a single hyperparameter configuration trial."""
-        import yaml as yaml_log  # type: ignore # pylint: disable=import-error,import-outside-toplevel
-
-        # Helper to publish progress
-        def record_progress(trial_num: int) -> None:
-            """Records current study trial progress and estimated completion time to Redis."""
-            try:
-                import json
-
-                import redis
-
-                r_client = redis.from_url(celery_app.conf.broker_url)
-                study_id = full_config.get("study_id")
-                n_trials = int(full_config.get("sweeper", {}).get("n_trials", 10))
-                # Ensure completed count does not exceed total trials configured for this study session
-                completed = min(trial_num + 1, n_trials)
-
-                start_time_bytes = r_client.get(f"study:{study_id}:start_time")
-                if start_time_bytes:
-                    study_start = float(start_time_bytes)
-                    elapsed = time.time() - study_start
-                    avg_duration = elapsed / completed
-                    remaining = n_trials - completed
-                    eta = round(remaining * avg_duration, 1) if remaining > 0 else 0.0
-                else:
-                    eta = 0.0
-
-                progress_data = {"completed_trials": completed, "total_trials": n_trials, "eta": eta}
-                redis_ttl = resolve_redis_ttl_seconds(full_config)
-                r_client.set(f"study:{study_id}:progress", json.dumps(progress_data), ex=redis_ttl)
-            except Exception as exc:
-                print(f"Warning: Could not record progress to Redis: {exc}")
-
-        # 1. Start with the HARDCODED defaults as ultimate safety net
-        trial_config: dict[str, Any] = copy.deepcopy(BASE_DEFAULT_CONFIG)
-
-        # 2. Merge with the USER'S full configuration (overwrites defaults)
-        deep_update(trial_config, full_config)
-
-        # 3. Generate and apply Optuna suggestions
-        overrides: dict[str, Any] = parse_space(trial, search_space)
-        print(f"Trial {trial.number}: Suggested overrides from Optuna: {overrides}")
-        deep_update(trial_config, overrides)
-
-        # 3.5 Normalize optional train.time: only keep it when explicitly > 0
-        user_time_hours = parse_user_train_time_hours(trial_config)
-        if user_time_hours is not None:
-            trial_config.setdefault("train", {})["time"] = user_time_hours
-        elif isinstance(trial_config.get("train"), dict):
-            trial_config["train"].pop("time", None)
-
-        # 4. Final Cleanup & Mandatory Fields (The "Contract" with Invoker)
-        # Ensure user_id exists
-        if "user_id" not in trial_config:
-            trial_config["user_id"] = trial_config.get("metadata", {}).get("author", "wisrovi")
-
-        # Simplify sweeper for the Invoker (Invoker only needs these 2)
-        default_fit = TASK_FITNESS_MAP.get(trial_config.get("style", "detect"), "metrics/mAP50-95(B)")
-        trial_config["sweeper"] = {
-            "study_name": sweeper_in.get("study_name", "optuna_study"),
-            "fitness": sweeper_in.get("fitness", default_fit),
-        }
-
-        # Log the exact payload for debugging
-        print(f"\n--- [TRIAL {trial.number} PAYLOAD TO INVOKER] ---")
-        print(yaml_log.dump(trial_config, default_flow_style=False))
-        print(f"--- [TRIAL {trial.number} TARGET QUEUE: {worker_queue}] ---")
-        print(f"--- [TRIAL {trial.number} PAYLOAD END] ---\n")
-
-        # Validate queue before sending
-        if not check_queue_active(celery_app, worker_queue):
-            print(f"WARNING: No active workers for '{worker_queue}'. Task might hang.")
-
-        # Dispatch the trial task to the worker with retries
-        max_retries = 3
-        retry_delay = 5
-        attempt = 0
-        result = None
-
-        while attempt < max_retries:
-            attempt += 1
-            print(f"Trial {trial.number}: Dispatching task to queue '{worker_queue}' (Attempt {attempt}/{max_retries})")
-
-            # Dispatch the trial task to the worker
-            job: AsyncResult = celery_app.send_task(
-                "tasks.train_on_gpu_simple", args=[trial_config], queue=worker_queue
-            )
-
-            # Wait for completion and extract the metric
-            result = wait_for_result(job)
-
-            # Check if result is valid and metric (accuracy or fitness) is non-negative
-            if isinstance(result, dict):
-                metric_key = None
-                if "accuracy" in result and result["accuracy"] is not None:
-                    metric_key = "accuracy"
-                elif "fitness" in result and result["fitness"] is not None:
-                    metric_key = "fitness"
-
-                if metric_key is not None:
-                    try:
-                        acc = float(result[metric_key])
-                        if acc >= 0:
-                            record_progress(trial.number)
-                            return acc
-                        print(
-                            f"Warning: Trial {trial.number} returned negative metric ({acc}). Possible training error."
-                        )
-                    except (ValueError, TypeError) as conv_err:
-                        print(f"Warning: Could not convert {metric_key} to float: {conv_err}")
-
-            print(f"[-] Trial {trial.number} attempt {attempt} failed or returned invalid result. Result: {result}")
-
-            if attempt < max_retries:
-                print(f"[*] Waiting {retry_delay}s before retrying...")
-                time.sleep(retry_delay)
-
-        print(f"[-] Critical: Trial {trial.number} failed after {max_retries} attempts.")
-        # If we reach here, all retries failed. Mark as 0.0 or raise error to let Optuna handle it.
-        record_progress(trial.number)
-        return 0.0
-
-    return objective
+        storage = RDBStorage(storage_url, skip_compatibility_check=True)
+        optuna.create_study(
+            storage=storage, study_name="test_connection", load_if_exists=True
+        )
+        return storage
+    except Exception:
+        storage_path = "sqlite:///src/optuna_study.db"
+        return RDBStorage(storage_path, skip_compatibility_check=True)
 
 
 @celery_app.task(name="tasks.manage_study")
-def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
-    """Orchestrates an entire Optuna study.
+def manage_study(full_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Orchestrate entire Optuna study dispatching trials to Celery worker queues.
 
     Args:
-        full_config (dict[str, Any]): The complete study configuration.
+        full_config (Dict[str, Any]): Complete study configuration.
 
     Returns:
-        dict[str, Any]: The study results including the best parameters found.
+        Dict[str, Any]: Study results including best parameters and objective value.
     """
     try:
         full_config["study_id"] = current_task.request.id
@@ -466,30 +79,25 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         full_config["study_id"] = "unknown"
 
     study_id = full_config.get("study_id", "unknown")
-
-    # Resolve all defaults, vision style, and fitness mapping
     resolve_study_configuration(full_config)
 
-    # Save config and start time to Redis for API consumption
     try:
         import json
-
         import redis
 
         r_client = redis.from_url(celery_app.conf.broker_url)
         redis_ttl = resolve_redis_ttl_seconds(full_config)
         r_client.set(f"study:{study_id}:config", json.dumps(full_config), ex=redis_ttl)
         r_client.set(f"study:{study_id}:start_time", str(time.time()), ex=redis_ttl)
-    except Exception as exc:
-        print(f"Warning: Could not save study metadata to Redis: {exc}")
+    except Exception:
+        pass
 
-    sweeper_cfg: dict[str, Any] = full_config.get("sweeper", {})
+    sweeper_cfg: Dict[str, Any] = full_config.get("sweeper", {})
     study_name: str = sweeper_cfg.get("study_name", "default_study")
     direction_val: str = sweeper_cfg.get("direction", "maximize")
     n_trials: int = int(sweeper_cfg.get("n_trials", 10))
 
     sampler_val = sweeper_cfg.get("sampler", "TPESampler")
-
     if sampler_val == "TPESampler":
         sampler = optuna.samplers.TPESampler()
     elif sampler_val == "RandomSampler":
@@ -499,72 +107,32 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
     else:
         raise ValueError("Invalid sampler")
 
-    # Pruner Configuration
-    pruner_name = sweeper_cfg.get("pruner")
-    pruner = None
-    if pruner_name == "MedianPruner":
-        pruner = optuna.pruners.MedianPruner()
-    elif pruner_name == "PercentilePruner":
-        pruner = optuna.pruners.PercentilePruner(percentile=25.0)
-    elif pruner_name == "HyperbandPruner":
-        pruner = optuna.pruners.HyperbandPruner()
-
-    if direction_val == "maximize":
-        direction = optuna.study.StudyDirection.MAXIMIZE
-    elif direction_val == "minimize":
-        direction = optuna.study.StudyDirection.MINIMIZE
-    else:
-        raise ValueError("Invalid direction")
-
-    # PostgreSQL configuration for Optuna storage
-    base_url = "postgresql://postgres:postgres@<IP>:23436/optuna_db"  # pragma: allowlist secret
-    control_host = os.getenv("CONTROL_HOST", "192.168.10.252")
-    storage_url = base_url.replace("<IP>", control_host)
-
-    # Use RDBStorage directly with skip_compatibility_check=True to avoid the version mismatch error
-
-    try:
-        print(f"[*] Attempting to connect to Optuna storage: {storage_url}")
-        storage = RDBStorage(storage_url, skip_compatibility_check=True)
-        # Try to create a dummy study to test connection
-        optuna.create_study(storage=storage, study_name="test_connection", load_if_exists=True)
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"Warning: Could not connect to PostgreSQL storage: {e}")
-        storage_path = "sqlite:///src/optuna_study.db"
-        print(f"[*] Falling back to local SQLite storage: {storage_path}")
-        storage = RDBStorage(storage_path, skip_compatibility_check=True)
+    direction = (
+        optuna.study.StudyDirection.MAXIMIZE
+        if direction_val == "maximize"
+        else optuna.study.StudyDirection.MINIMIZE
+    )
+    storage = _init_optuna_storage()
 
     study: optuna.Study = optuna.create_study(
         study_name=study_name,
         direction=direction,
         storage=storage,
         sampler=sampler,
-        pruner=pruner,
         load_if_exists=True,
     )
+
+    cancel_callback = StudyCancelCallback(
+        broker_url=celery_app.conf.broker_url, study_id=study_id
+    )
+    objective_func = OptunaTrialObjective(celery_app=celery_app, full_config=full_config)
+
     try:
-        study.set_user_attr("config", full_config)
+        study.optimize(
+            objective_func, n_trials=n_trials, callbacks=[cancel_callback]
+        )
     except Exception as exc:
-        print(f"Warning: Could not save configuration in Optuna user attributes: {exc}")
-
-    def check_cancel_callback(optuna_study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
-        """Checks if a cancellation request has been submitted for this study."""
-        try:
-            import redis
-
-            r_client = redis.from_url(celery_app.conf.broker_url)
-            if study_id and r_client.get(f"study:{study_id}:cancel"):
-                print(f"[*] Cancellation requested for study {study_id}. Stopping Optuna optimization...")
-                optuna_study.stop()
-        except Exception as exc:
-            print(f"Warning: Could not check cancellation status in Redis: {exc}")
-
-    # Run the optimization loop
-    try:
-        study.optimize(create_objective(full_config), n_trials=n_trials, callbacks=[check_cancel_callback])
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"[-] Critical error during Optuna optimization: {e}")
-        return {"status": "failed", "error": str(e), "study_name": study_name}
+        return {"status": "failed", "error": str(exc), "study_name": study_name}
 
     return {
         "status": "completed",
@@ -572,3 +140,22 @@ def manage_study(full_config: dict[str, Any]) -> dict[str, Any]:
         "best_params": study.best_params,
         "best_value": study.best_value,
     }
+
+
+__all__ = [
+    "BASE_DEFAULT_CONFIG",
+    "DEFAULT_REDIS_TTL_SECONDS",
+    "DEFAULT_REFERENCE_TIME_HOURS",
+    "TASK_FITNESS_MAP",
+    "VERSION",
+    "check_queue_active",
+    "create_objective",
+    "deep_update",
+    "manage_study",
+    "parse_space",
+    "parse_user_train_time_hours",
+    "resolve_redis_ttl_seconds",
+    "resolve_study_configuration",
+    "resolve_style",
+    "wait_for_result",
+]
