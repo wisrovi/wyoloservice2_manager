@@ -1,11 +1,16 @@
 """Declarative WPipe pipeline assembly for manager study orchestrations."""
 
-from wpipe import Pipeline
+import os
+import tempfile
+
 from states.manage_study_step import manage_study_step
+from wpipe import Pipeline
+
+DEFAULT_TRACKING_DB = os.path.join(tempfile.gettempdir(), "manager_study.db")
 
 
 def build_manager_study_pipeline(
-    tracking_db: str = "/tmp/manager_study.db",
+    tracking_db: str = DEFAULT_TRACKING_DB,
 ) -> Pipeline:
     """Instantiate and configure manager study orchestration pipeline.
 
