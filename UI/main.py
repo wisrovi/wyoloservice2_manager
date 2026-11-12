@@ -221,45 +221,50 @@ async def get_active_tasks() -> dict[str, Any]:
 
 
 @app.post("/api/cluster/purge/queue/{queue_name}")
-async def purge_queue(queue_name: str):
+async def purge_queue(queue_name: str) -> dict[str, Any]:
     """Clear a specific Redis queue."""
     try:
         import redis
+
         r = redis.Redis.from_url(os.getenv("REDIS_URL", f"redis://{CONTROL_HOST}:23437/0"))
         r.delete(queue_name)
         return {"status": "success", "message": f"Queue '{queue_name}' cleared successfully."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/api/cluster/purge/unacked")
-async def purge_unacked():
+async def purge_unacked() -> dict[str, Any]:
     """Clear only unacknowledged tasks (phantom tasks)."""
     try:
         import redis
+
         r = redis.Redis.from_url(os.getenv("REDIS_URL", f"redis://{CONTROL_HOST}:23437/0"))
         # Celery with Redis uses these keys for unacked tasks
         r.delete("unacked")
         r.delete("unacked_index")
         return {"status": "success", "message": "Phantom (unacked) tasks cleared successfully."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/api/cluster/purge/all")
-async def purge_all():
+async def purge_all() -> dict[str, Any]:
     """Full Redis database reset (Extreme)."""
     try:
         import redis
+
         r = redis.Redis.from_url(os.getenv("REDIS_URL", f"redis://{CONTROL_HOST}:23437/0"))
         r.flushdb()
         return {"status": "success", "message": "Full cluster reset completed."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # Mount Gradio Launcher
 app = gr.mount_gradio_app(app, launcher_demo, path="/launcher")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=80)  # nosec B104
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", "80"))
+    uvicorn.run(app, host=host, port=port)
