@@ -2,9 +2,9 @@
 
 import argparse
 import sys
-from typing import Any, Dict
-import yaml
+from typing import Any
 
+import yaml
 from pipelines import manager_study_pipeline
 from user_orchestrator import VERSION, manage_study
 
@@ -30,7 +30,7 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_local_study(config_file: str) -> Dict[str, Any]:
+def run_local_study(config_file: str) -> dict[str, Any]:
     """Execute study directly using manager study pipeline.
 
     Args:
@@ -39,7 +39,7 @@ def run_local_study(config_file: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Result mapping containing study output.
     """
-    with open(config_file, "r", encoding="utf-8") as f:
+    with open(config_file, encoding="utf-8") as f:
         study_config = yaml.safe_load(f) or {}
 
     results = manager_study_pipeline.run(study_config)
