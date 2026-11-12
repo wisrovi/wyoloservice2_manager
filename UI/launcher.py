@@ -78,6 +78,7 @@ sweeper:
     )
 
 if __name__ == "__main__":
-    # Get port from environment or default to 7860
+    # Get host and port from environment (safe default to loopback)
+    server_name = os.getenv("GRADIO_SERVER_NAME", "127.0.0.1")
     port = int(os.getenv("GRADIO_PORT", "7860"))
-    demo.launch(server_name="0.0.0.0", server_port=port)  # nosec B104
+    demo.launch(server_name=server_name, server_port=port)
